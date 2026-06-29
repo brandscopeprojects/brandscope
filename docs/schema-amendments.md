@@ -398,6 +398,22 @@ provision_brand(p_user_id uuid, p_org_name text, p_brand_name text, p_domain tex
 ## G. Competitor cap (Decision 1)
 Schema comment on `brands` ("MVP one brand per org") unchanged. **Competitor cap = 10 per brand**, default starting point 5 in onboarding. Enforce at the application layer (onboarding step 4 + `/admin/competitors`), not via DB constraint (Growth plan = 10; Professional = 25 is Phase 2+).
 
+## D.5 `scan_jobs` fan-out columns (Sprint 3 orchestration)
+Added in migration `13_pgmq_cron_orchestration.sql` to make fan-out completion
+("expected vs done", `agent-orchestration.md`) race-free without a new table:
+- `scan_jobs.expected_modules text[]` — the module tasks enqueued for this job
+  (written by `brand-scan` from the brand's enabled modules).
+- `scan_jobs.synthesis_enqueued boolean NOT NULL DEFAULT false` — claimed once by
+  `app_scan_complete_module()` so exactly one finishing module enqueues
+  `scan_synthesis` (no double-synthesis under parallel module completion).
+
+Also adds: extensions `pgmq`/`pg_cron`/`pg_net`; queues `scan_modules` +
+`scan_synthesis`; service-role-only RPCs `app_pgmq_send` / `app_pgmq_read` /
+`app_pgmq_archive` / `app_scan_complete_module` / `app_trigger_function`; and
+`pg_cron` schedules (`weekly-scan-trigger` Mon 01:00 UTC, `between-cycle-monitor`
+every 6h) that POST to Edge Functions via `pg_net`, reading `project_url` +
+`cron_secret` from Vault (owner sets these at deploy).
+
 ---
 
 *This amendments file is authoritative over the original schema where they differ. Any further schema change must be appended here with sign-off.*
