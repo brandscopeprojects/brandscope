@@ -27,6 +27,8 @@ export type CompetitorAdNetworks = {
   name: string;
   tier: string | null;
   adNetworks: string[];
+  /** Own brand (RiversBet) → cobalt-marked row, no tier badge. */
+  isOwnBrand: boolean;
 };
 
 export type SocialAdsData = {
@@ -73,6 +75,9 @@ export async function getSocialAdsData(): Promise<SocialAdsData | null> {
         name: comp.name,
         tier: comp.tier,
         adNetworks: asStringArray(r.ad_networks),
+        // Rows come from brand_competitors, so these are always competitors,
+        // never the own brand.
+        isOwnBrand: false,
       };
     })
     .filter((c): c is CompetitorAdNetworks => c !== null)

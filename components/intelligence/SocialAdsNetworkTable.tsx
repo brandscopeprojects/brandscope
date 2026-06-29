@@ -16,8 +16,17 @@ const columns: Column<CompetitorAdNetworks>[] = [
     header: "Competitor",
     cell: (row) => (
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-ink">{row.name}</span>
-        <TierBadge tier={row.tier} />
+        <span className={row.isOwnBrand ? "font-semibold text-cobalt" : "font-medium text-ink"}>
+          {row.name}
+        </span>
+        {row.isOwnBrand ? (
+          // Own brand → cobalt "You" marker, never a tier badge (ui-constraints §2.2).
+          <span className="rounded-chip bg-cobalt/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-cobalt">
+            You
+          </span>
+        ) : (
+          <TierBadge tier={row.tier} />
+        )}
       </div>
     ),
   },
@@ -35,6 +44,7 @@ export function SocialAdsNetworkTable({ rows }: { rows: CompetitorAdNetworks[] }
         columns={columns}
         rows={rows}
         getRowKey={(row) => row.competitorId}
+        isHighlighted={(row) => row.isOwnBrand}
         emptyLabel="No ad networks detected yet."
       />
       <Link

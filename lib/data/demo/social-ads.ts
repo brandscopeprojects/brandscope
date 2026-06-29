@@ -14,28 +14,39 @@ export const DEMO_SOCIAL_ADS: SocialAdsData = {
   scanWeek: "2025-W20",
   competitors: [
     {
+      competitorId: "demo-riversbet",
+      name: "RiversBet",
+      tier: null,
+      adNetworks: ["Google Ads", "Facebook Ads"],
+      isOwnBrand: true,
+    },
+    {
       competitorId: "demo-sportybet",
       name: "SportyBet",
-      tier: "tier_1",
+      tier: "dominant",
       adNetworks: ["Google Ads", "Facebook Ads", "Taboola"],
+      isOwnBrand: false,
     },
     {
       competitorId: "demo-betking",
       name: "BetKing",
-      tier: "tier_1",
+      tier: "challenger",
       adNetworks: ["Google Ads", "Facebook Ads"],
+      isOwnBrand: false,
     },
     {
       competitorId: "demo-1xbet",
       name: "1xBet",
-      tier: "tier_1",
+      tier: "challenger",
       adNetworks: ["Google Ads", "Facebook Ads", "Outbrain", "Propeller"],
+      isOwnBrand: false,
     },
     {
       competitorId: "demo-nairabet",
       name: "NairaBet",
-      tier: "tier_2",
+      tier: "mid_market",
       adNetworks: ["Google Ads"],
+      isOwnBrand: false,
     },
   ],
 };
