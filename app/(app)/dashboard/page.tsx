@@ -16,6 +16,7 @@ import { ScatterMap } from "@/components/ui/ScatterMap";
 import { CompetitiveRadar } from "@/components/ui/CompetitiveRadar";
 import { SOVDonut } from "@/components/ui/SOVDonut";
 import { ThreatGauge } from "@/components/ui/ThreatGauge";
+import { EmptyState } from "@/components/intelligence/EmptyState";
 
 export const dynamic = "force-dynamic";
 
@@ -57,36 +58,25 @@ export default async function DashboardPage() {
   // --- Pre-first-scan empty state (scan_jobs row is pending) ---
   if (!data) {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-16">
+      <div className="space-y-8">
         <DashboardHeader
           brandName={brand.name}
           markets={brand.market}
           scanWeek={null}
           aiVisibility={{ score: null, trend: null }}
         />
-        <div className="mt-10 rounded-card bg-card p-8 text-center shadow-sh1">
-          <div
-            className="mx-auto mb-4 h-2.5 w-2.5 animate-brand-pulse rounded-full bg-cobalt"
-            aria-hidden
-          />
-          <h2 className="font-display text-xl font-bold text-ink">
-            Your first scan is running
-          </h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-secondary">
-            We&apos;re analysing {brand.name} against your competitors across
-            promotions, traffic, SEO, regulatory and AI visibility. Your
-            evidence-backed action plan will appear here as soon as the weekly
-            scan completes.
-          </p>
-        </div>
-      </main>
+        <EmptyState
+          title="Your first scan is running"
+          message={`We're analysing ${brand.name} against your competitors across promotions, traffic, SEO, regulatory and AI visibility. Your evidence-backed action plan will appear here as soon as the weekly scan completes.`}
+        />
+      </div>
     );
   }
 
   const { scatter, radar, sov, threat, aiVisibility, recommendations, scanWeek } = data;
 
   return (
-    <main className="mx-auto max-w-[1400px] px-6 py-8">
+    <>
       <DashboardHeader
         brandName={brand.name}
         markets={brand.market}
@@ -141,6 +131,6 @@ export default async function DashboardPage() {
           </div>
         </div>
       </div>
-    </main>
+    </>
   );
 }

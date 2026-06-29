@@ -18,7 +18,7 @@ import { ActionCard } from "@/components/action/ActionCard";
 import {
   updateRecommendationStatus,
   generateAsset,
-} from "@/app/dashboard/actions";
+} from "@/app/(app)/dashboard/actions";
 
 // Map a filter chip to the urgency it selects ("all" matches everything).
 const FILTER_URGENCY: Partial<Record<FilterStatus, Urgency>> = {

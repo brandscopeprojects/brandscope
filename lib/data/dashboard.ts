@@ -12,20 +12,9 @@ import type {
   ConfidenceLevel,
 } from "@/types/view-models";
 import type { CompetitorState } from "@/types/cache-contracts";
+import type { BrandSummary } from "@/lib/data/brand";
 
-export type BrandSummary = { id: string; name: string; market: string[]; slug: string };
-
-/** The signed-in user's brand (RLS scopes to their org). MVP = one brand per org. */
-export async function getCurrentBrand(): Promise<BrandSummary | null> {
-  const supabase = createClient();
-  const { data } = await supabase
-    .from("brands")
-    .select("id, name, market, slug")
-    .is("deleted_at", null)
-    .limit(1)
-    .maybeSingle();
-  return data ?? null;
-}
+export { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
 
 export type DashboardData = {
   scanWeek: string;
