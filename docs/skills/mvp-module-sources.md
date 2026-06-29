@@ -25,9 +25,10 @@
 - **Haiku:** classify snippet ownership, summarise schema types per competitor.
 
 ### 4. Tech Stack & Ad Network  ✓ FULL  → writes `tech_stack_cache` (+ `competitor_changes` on webhook)
-- **Endpoint:** DetectZeStack `GET https://api.detectzestack.com/v1/detect?url={domain}`, header **`X-API-Key`**. Webhook `POST /api/webhooks/detectzestack` (HMAC-SHA256).
+- **Endpoint (CORRECTED):** DetectZeStack `GET https://detectzestack.com/analyze?url={domain}`, header **`X-API-Key`**. Webhook `POST /api/webhooks/detectzestack` (HMAC-SHA256).
+  - ⚠️ The API-map's `https://api.detectzestack.com/v1/detect` is **wrong** — that host does not resolve (DNS failure, verified). Use `detectzestack.com/analyze`.
+  - ⚠️ **BLOCKER:** the stored key returns `401 invalid API key` against the real endpoint (verified). A valid direct-API key is required before this module can run (or switch to the RapidAPI route: host `detectzestack.p.rapidapi.com`, header `X-RapidAPI-Key` — confirm which with owner).
 - **Haiku:** none — response is already structured. (Spend-intensity scoring computed in code.)
-- ⚠️ Re-verify the key against `/v1/detect` (earlier 401 was against `/analyze`).
 
 ### 5. App Store  ✓ FULL  → writes `product_intel_cache` / `customer_intel_cache`
 - **Endpoints:** `app_data/google/app_reviews/task_post`, `app_data/google/app_info/task_post`, `app_data/apple/app_reviews/task_post`, `app_data/apple/app_info/task_post`; `dataforseo_labs/google/app_competitors/live`, `…/app_keywords/live`.
@@ -63,6 +64,20 @@
 - **OpenAI GPT-4.1 Mini** → `chat_messages`; brand context injected server-side from `weekly_cache` + recent `recommendations` + brand profile.
 
 ---
+
+## Competitor Tier Detection (onboarding step 10 / "Detect Brand")
+Auto-fill competitor **name** and **tier** when a domain is entered.
+- **Name:** derive from domain (strip TLD/subdomain, title-case); editable.
+- **Tier:** from **DataForSEO bulk traffic estimation** (`dataforseo_labs/google/bulk_traffic_estimation/live`) → estimated monthly visits:
+  | Est. monthly visits | Tier |
+  |---|---|
+  | > 1,000,000 | `dominant` |
+  | 100,000 – 1,000,000 | `challenger` |
+  | 10,000 – 100,000 | `mid_market` |
+  | < 10,000 | `niche` |
+- **Default:** if DataForSEO returns no data → `challenger`.
+- **Editable:** the user can override the auto-detected tier in onboarding (step 4) and `/admin/competitors`.
+- Writes: `competitors.tier` (+ `name`); same heuristic used for the brand's own tier at onboarding.
 
 ## Endpoints used at MVP but NOT detailed in the API map (confirm shapes vs DataForSEO docs at build)
 - OnPage microdata / Content Parsing (AEO schema, Promotions proxy)

@@ -19,9 +19,9 @@
 | 5 | Competitor Profile | `/competitors/[competitor_id]` | Auth | `competitor_profiles`, `competitor_changes`, `weekly_cache` | CompetitorHeader, TabNav, MetricStrip, ChangeTimeline, ActionCard |
 | 6 | Promotions Intelligence | `/promotions` | Auth | `promotions_cache`, `weekly_cache` | StatStrip, ComparisonTable, WoWIndicator, ActionCard |
 | 7 | Traffic & SEO Intelligence | `/traffic-seo` | Auth | `seo_cache` (DataForSEO Labs) | TrafficChart, DomainAuthorityChart, KeywordGapTable, SERPTracker, ActionCard |
-| 8 | Social & Ads Intelligence | `/social-ads` | Auth | `social_cache` (Apify), `ads_cache` (FB Ad Library) | SocialComparisonTable, AdCard, SpendTierBadge, SimilarityFlag, ActionBar |
-| 9 | Ads & Spend Intelligence | `/ads-spend` | Auth | `tech_stack_cache` (DetectZeStack), `ads_cache` | SpendScorecard, AdNetworkTable, TechStackTable, ChannelMixChart, ActionCard |
-| 10 | Product Intelligence | `/products` | Auth | `product_intelligence_cache`, `app_reviews_cache` | VerticalCard, ProductMatrix, AviatorPanel, ActionCard |
+| 8 | Social & Ads Intelligence | `/social-ads` | Auth | **MVP: PLACEHOLDER** — social "coming soon"; Ad Network Intelligence section from `tech_stack_cache` (DetectZeStack). Full social via `social_cache`/`ads_cache` = Phase 2 (Apify) | SocialComparisonTable, AdCard, SpendTierBadge, SimilarityFlag, ActionBar |
+| 9 | Tech Stack & Ad Network Intelligence | `/tech-stack` | Auth | `tech_stack_cache` (DetectZeStack) | SpendScorecard, AdNetworkTable, TechStackTable, ChannelMixChart, ActionCard |
+| 10 | Product Intelligence | `/products` | Auth | **MVP: DOES NOT SHIP as standalone** — product/app-store data merged into `/competitors/[id]` (`product_intel_cache`, app data) | VerticalCard, ProductMatrix, AviatorPanel, ActionCard |
 | 11 | Customer Intelligence | `/customers` | Auth | `customer_intelligence_cache`, `app_reviews_cache`, `social_sentiment_cache` | TrafficSourceChart, DemographicsPanel, IntentBubbleChart, ComplaintHeatMap, SentimentTrendChart |
 | 12 | Regulatory Compliance | `/regulatory` | Auth | `regulatory_cache`, `regulatory_documents`, `compliance_scores` | ComplianceMatrix, RegulatoryFeed, ComplianceAudit, ViolationAlerts |
 | 13 | Hiring & Signals | `/hiring-signals` | Auth | `hiring_signals_cache` (Firecrawl), `hiring_intelligence` (Claude) | MetricStrip, HiringTimeline, SignalTag, SignalIntelligencePanel, AfricaMap |
@@ -31,6 +31,16 @@
 | 17 | Performance & Outcomes | `/performance` | Auth | `action_outcomes`, `performance_memory`, `brand_benchmarks` | MetricCard, OutcomeTable, MemoryInsightCard, BenchmarkChart |
 | 18 | Reports | `/reports` | Auth | `reports`, `report_schedule` | ReportTypeCard, ReportsTable, ReportPreview, ScheduledReports |
 | 19 | Brand Chat | `/chat` | Auth | `chat_conversations` (+ GPT-4.1 Mini; brand context injected) | ConversationList, ChatMessage, InlineDataTable, SuggestedPrompts, ChatInput |
+
+### Canonical Routes (MVP reconciliation)
+Resolves route drift between the screen doc and `docs/mvp-scope.md` (MVP wins):
+- **`/tech-stack`** — Tech Stack & Ad Network Intelligence (full build, DetectZeStack). This replaces the old `/ads-spend`; there is no standalone `/ads-spend` route.
+- **`/social-ads`** — placeholder page: social "coming soon" + an Ad Network Intelligence summary sourced from `tech_stack_cache` (links to `/tech-stack`).
+- **`/products`** — does **not** ship as a standalone page at MVP. Product vertical + App Store data render inside **`/competitors/[id]`** (and complaint/sentiment within `/customers`).
+- **`/promotions`** — titled **"Promotion Signals"** at MVP (signal-based, no exact bonus numbers); route unchanged.
+- App Store Intelligence has **no standalone route** — it lives within `/competitors/[id]` and `/customers`.
+
+> Note: several `Primary data source(s)` cells in the tables above still name full-product/Phase-2 tables (`ads_cache`, `aeo_cache`, `compliance_scores`, `app_reviews_cache`, `social_sentiment_cache`, `hiring_intelligence`, `action_plan_cache`, `report_schedule`, `api_health`, `api_cost_logs`, `cost_logs`). The authoritative table names are in `docs/schema-amendments.md` + `brandscopeschema.md`; at build time use those (e.g. ads→`social_cache.ads_data`, aeo→`geo_cache`, compliance→`regulatory_cache`, app reviews→`product_intel_cache`/`customer_intel_cache`).
 
 ## Brand Admin Screens (Admin role)
 
