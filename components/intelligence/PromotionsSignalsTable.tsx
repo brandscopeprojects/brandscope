@@ -26,7 +26,7 @@ const columns: Column<PromotionSignal>[] = [
     key: "competitor",
     header: "Competitor",
     cell: (s) => (
-      <span className="inline-flex items-center gap-2">
+      <span className="inline-flex items-center gap-2 whitespace-nowrap">
         <span className="font-medium text-ink">{s.name}</span>
         <TierBadge tier={s.tier} />
       </span>
@@ -35,14 +35,19 @@ const columns: Column<PromotionSignal>[] = [
   {
     key: "promotion",
     header: "Promotion",
-    cell: (s) => s.promoTitle ?? <span className="text-ink-faint">—</span>,
+    cell: (s) =>
+      s.promoTitle ? (
+        <span className="whitespace-nowrap">{s.promoTitle}</span>
+      ) : (
+        <span className="text-ink-faint">—</span>
+      ),
   },
   {
     key: "type",
     header: "Type",
     cell: (s) =>
       s.promoType ? (
-        <span className="inline-flex items-center rounded-chip bg-base-secondary px-2 py-0.5 text-xs font-medium text-ink-secondary">
+        <span className="inline-flex items-center whitespace-nowrap rounded-chip bg-base-secondary px-2 py-0.5 text-xs font-medium text-ink-secondary">
           {s.promoType}
         </span>
       ) : (
@@ -53,8 +58,11 @@ const columns: Column<PromotionSignal>[] = [
     key: "isNew",
     header: "New?",
     align: "center",
+    // A competitor launching a NEW promo is a WATCH signal (something to monitor),
+    // not a positive opportunity for our brand — amber, per §2.3/§8.1/§15. Green is
+    // reserved for genuinely positive states only.
     cell: (s) =>
-      s.isNew ? <StatusPill label="New" tone="good" /> : <span className="text-ink-faint">—</span>,
+      s.isNew ? <StatusPill label="New" tone="warn" /> : <span className="text-ink-faint">—</span>,
   },
   {
     key: "trend",
@@ -64,7 +72,9 @@ const columns: Column<PromotionSignal>[] = [
     // permitted under the signals-only policy. Show direction + magnitude of change.
     cell: (s) =>
       s.wowBonusChangePct != null && s.wowBonusChangePct !== 0 ? (
-        <WoWIndicator delta={s.wowBonusChangePct} suffix="%" />
+        <span className="whitespace-nowrap">
+          <WoWIndicator delta={s.wowBonusChangePct} suffix="%" />
+        </span>
       ) : (
         <span className="text-ink-faint">—</span>
       ),
@@ -77,7 +87,9 @@ const columns: Column<PromotionSignal>[] = [
       const scraped = formatScrapedAt(s.scrapedAt);
       if (!href) {
         return scraped ? (
-          <span className="font-mono text-[13px] text-ink-faint">{scraped}</span>
+          <span className="whitespace-nowrap font-mono text-[13px] text-ink-faint">
+            {scraped}
+          </span>
         ) : (
           <span className="text-ink-faint">—</span>
         );
@@ -88,11 +100,15 @@ const columns: Column<PromotionSignal>[] = [
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="break-all font-mono text-[13px] text-cobalt hover:underline"
+            className="whitespace-nowrap font-mono text-[13px] text-cobalt hover:underline"
           >
             View source
           </a>
-          {scraped && <span className="font-mono text-[11px] text-ink-faint">{scraped}</span>}
+          {scraped && (
+            <span className="whitespace-nowrap font-mono text-[11px] text-ink-faint">
+              {scraped}
+            </span>
+          )}
         </span>
       );
     },
