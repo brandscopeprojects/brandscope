@@ -1,0 +1,48 @@
+// Shared onboarding constants — safe to import from both client and server
+// (no secrets, no server-only deps). Tier type re-exported for the wizard UI.
+
+export const MARKETS = [
+  { value: "nigeria", label: "Nigeria" },
+  { value: "kenya", label: "Kenya" },
+  { value: "south_africa", label: "South Africa" },
+] as const;
+
+export type MarketValue = (typeof MARKETS)[number]["value"];
+export const MARKET_VALUES = MARKETS.map((m) => m.value) as readonly string[];
+
+export type IndustryOption = {
+  value: string;
+  label: string;
+  comingSoon: boolean;
+};
+
+// iGaming is the only MVP vertical; the rest are shown disabled ("Coming soon").
+// Fintech/FMCG/Telecom are Phase-3 exclusions (mvp-constraints §3).
+export const INDUSTRIES: IndustryOption[] = [
+  { value: "igaming", label: "iGaming", comingSoon: false },
+  { value: "fintech", label: "Fintech", comingSoon: true },
+  { value: "fmcg", label: "FMCG", comingSoon: true },
+  { value: "telecom", label: "Telecom", comingSoon: true },
+  { value: "ecommerce", label: "E-commerce", comingSoon: true },
+];
+
+export const COMPETITOR_TIERS = [
+  { value: "dominant", label: "Dominant" },
+  { value: "challenger", label: "Challenger" },
+  { value: "mid_market", label: "Mid-market" },
+  { value: "niche", label: "Niche" },
+] as const;
+
+export type TierValue = (typeof COMPETITOR_TIERS)[number]["value"];
+
+// Competitor cap (CLAUDE.md Decision 1): default starting point 5, max 10.
+export const COMPETITOR_DEFAULT_COUNT = 5;
+export const COMPETITOR_MAX = 10;
+
+export const ONBOARDING_STEPS = [
+  "Brand",
+  "Markets",
+  "Industry",
+  "Competitors",
+  "Confirm",
+] as const;

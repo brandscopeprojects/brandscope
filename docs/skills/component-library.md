@@ -76,6 +76,49 @@ The workhorse (used on ~11 screens). Renders the fixed card anatomy (`ui-constra
 
 ---
 
+## Onboarding components (`components/onboarding/*`)
+
+Light theme **except** the scanning screen (Screen 2), which is the only dark screen
+(`bg #141416` — explicit exception, `ui-constraints.md` §12/§15). Scanning components
+render light-on-dark (white/white-tinted text), cobalt is the progress/own-brand accent.
+
+### `OnboardingWizard` — `components/onboarding/OnboardingWizard.tsx`
+- **Props:** none (self-contained client wizard). Holds the 5-step state; submits via the `completeOnboarding` server action; auto-detects via the `detectBrand` server action; redirects to `/onboarding/scanning`.
+- **Composes:** `StepIndicator`, `TextInput`, `AutoDetectInput`, `MultiSelectChips`, `CompetitorList`, `PrimaryButton`.
+- **Tokens:** card surface, divider, sh1, cobalt CTA, ink/ink-secondary. **Screen:** Onboarding(1).
+
+### `StepIndicator` — `components/onboarding/StepIndicator.tsx`
+- **Props:** `{ steps: readonly string[], current: number }` — numbered step pills; active = cobalt fill, complete = cobalt tint + ✓. **Screen:** Onboarding(1).
+
+### `TextInput` — `components/onboarding/TextInput.tsx`
+- **Props:** `InputHTMLAttributes & { label: string, hint?: string }` — labelled field; divider border, cobalt focus, `ink-faint` placeholder/hint. **Screen:** Onboarding(1).
+
+### `AutoDetectInput` — `components/onboarding/AutoDetectInput.tsx`
+- **Props:** `{ label?, value, onChange, onDetect:(v)=>Promise<void>, detecting?, buttonLabel? }` (+ input attrs) — domain field that fires `onDetect` on blur and via an inline "Detect Brand" button (cobalt outline). Used for brand domain (auto-fill name) and competitor domains (name+tier). **Screen:** Onboarding(1).
+
+### `MultiSelectChips` — `components/onboarding/MultiSelectChips.tsx`
+- **Props:** `{ options: {value,label}[], selected: string[], onToggle:(v)=>void }` — market pill chips; selected = solid cobalt fill, unselected = `base-secondary`. **Screen:** Onboarding(1, Step 2).
+
+### `CompetitorList` — `components/onboarding/CompetitorList.tsx`
+- **Props:** `{ competitors: CompetitorEntry[], onChange, onRemove, onAdd, onDetect }` where `CompetitorEntry = { id, domain, name, tier, detecting }`. Removable rows; each row = `AutoDetectInput` (domain) + editable name + editable tier `<select>`. Caps at `COMPETITOR_MAX` (10); seeds `COMPETITOR_DEFAULT_COUNT` (5). **Screen:** Onboarding(1, Step 4).
+
+### `PrimaryButton` — `components/onboarding/PrimaryButton.tsx`
+- **Props:** `ButtonHTMLAttributes & { variant?: 'primary'|'ghost' }` — cobalt CTA (primary) / neutral text (ghost, used for "Back"). **Screen:** Onboarding(1, 2).
+
+### `StatusPoller` — `components/onboarding/StatusPoller.tsx`
+- **Props:** `{ brandId: string, initialStatus, initialProgress? }` — client component; polls `scan_jobs` every 5s via the **browser** client (RLS-scoped by brand). `completed` → redirect `/dashboard`; `failed` → Retry. Drives `RadarAnimation` + `ProgressChecklist` + `ProgressBar`. **Screen:** Onboarding Scanning(2). **Dark.**
+
+### `RadarAnimation` — `components/onboarding/RadarAnimation.tsx`
+- **Props:** none — CSS cobalt radar sweep (`animate-radar-sweep`/`animate-radar-pulse` keyframes in `globals.css`) over concentric rings + pulsing own-brand cobalt dot. **Screen:** Onboarding Scanning(2). **Dark.**
+
+### `ProgressChecklist` — `components/onboarding/ProgressChecklist.tsx`
+- **Props:** `{ items: { label, state: 'pending'|'active'|'done' }[] }` — sequential checklist; revealed items show active/done, cobalt marker. Presentational (parent reveals ~800ms). **Screen:** Onboarding Scanning(2). **Dark.**
+
+### `ProgressBar` — `components/onboarding/ProgressBar.tsx`
+- **Props:** `{ percent: number }` — cobalt fill on `white/10` track + mono `%`. **Screen:** Onboarding Scanning(2). **Dark.**
+
+---
+
 ## Mobile
 
 ### `BottomNav` — `components/mobile/BottomNav.tsx`

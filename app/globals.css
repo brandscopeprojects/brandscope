@@ -10,3 +10,34 @@
     @apply bg-base text-ink font-sans antialiased;
   }
 }
+
+@layer utilities {
+  /* Onboarding scanning screen (Screen 2) — the only dark screen.
+     Cobalt radar sweep + subtle own-brand pulse. Used by RadarAnimation. */
+  @keyframes radar-sweep {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .animate-radar-sweep {
+    animation: radar-sweep 2.4s linear infinite;
+  }
+
+  @keyframes radar-pulse {
+    0%,
+    100% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+  }
+  .animate-radar-pulse {
+    animation: radar-pulse 2s ease-in-out infinite;
+  }
+}
