@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentBrand } from "@/lib/data/brand";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { Database } from "@/types/database.types";
 import {
   ALERT_TRIGGERS,
@@ -77,6 +78,11 @@ function labelForAlertType(alertType: string): string {
  */
 export const getAlertConfigs = cache(
   async function getAlertConfigs(): Promise<AlertConfigView> {
+    if (isDemoMode()) {
+      const { DEMO_ADMIN_ALERTS } = await import("@/lib/data/demo/admin-alerts");
+      return DEMO_ADMIN_ALERTS.config;
+    }
+
     const empty: AlertConfigView = {
       configId: null,
       emailEnabled: false,
@@ -125,6 +131,11 @@ export const getAlertConfigs = cache(
  */
 export const getAlertHistory = cache(
   async function getAlertHistory(): Promise<AlertHistoryView[]> {
+    if (isDemoMode()) {
+      const { DEMO_ADMIN_ALERTS } = await import("@/lib/data/demo/admin-alerts");
+      return DEMO_ADMIN_ALERTS.history;
+    }
+
     const current = await getCurrentBrand();
     if (!current) return [];
 
