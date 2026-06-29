@@ -3,6 +3,7 @@ import { cache } from "react";
 import { requireBrandAdmin } from "@/lib/auth";
 import { getCurrentOrganisationId } from "@/lib/data/org";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { StatusTone } from "@/components/intelligence/StatusPill";
 import type { Database } from "@/types/database.types";
 
@@ -150,6 +151,15 @@ type UsageRow = Database["public"]["Tables"]["usage_metrics"]["Row"];
  */
 export const getBillingData = cache(
   async function getBillingData(): Promise<BillingData | null> {
+    // Demo short-circuit FIRST — before any auth/org/service-role calls. In demo
+    // mode there is no real session, so requireBrandAdmin() must not run.
+    if (isDemoMode()) {
+      const { DEMO_ADMIN_BILLING } = await import(
+        "@/lib/data/demo/admin-billing"
+      );
+      return DEMO_ADMIN_BILLING;
+    }
+
     // Defense-in-depth: the layout already gated, but re-assert the role here so
     // the service-role read can never run for a non-admin session.
     await requireBrandAdmin();
