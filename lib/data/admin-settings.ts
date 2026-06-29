@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentBrand } from "@/lib/data/brand";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { Database } from "@/types/database.types";
 
 export type BrandRow = Database["public"]["Tables"]["brands"]["Row"];
@@ -30,6 +31,13 @@ export type BrandSettings = {
  */
 export const getBrandSettings = cache(
   async function getBrandSettings(): Promise<BrandSettings | null> {
+    if (isDemoMode()) {
+      const { DEMO_ADMIN_SETTINGS } = await import(
+        "@/lib/data/demo/admin-settings"
+      );
+      return DEMO_ADMIN_SETTINGS;
+    }
+
     const current = await getCurrentBrand();
     if (!current) return null;
 
