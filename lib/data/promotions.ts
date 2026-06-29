@@ -6,6 +6,7 @@ import {
   competitorNameMap,
   latestScanWeek,
 } from "@/lib/data/competitors";
+import { isDemoMode } from "@/lib/data/demo-mode";
 
 export { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
 
@@ -77,6 +78,11 @@ function str(v: unknown): string | null {
 export async function getPromotionsData(
   brand: BrandSummary,
 ): Promise<PromotionsData | null> {
+  if (isDemoMode()) {
+    const { DEMO_PROMOTIONS } = await import("@/lib/data/demo/promotions");
+    return DEMO_PROMOTIONS;
+  }
+
   const supabase = createClient();
 
   const { data: rows } = await supabase

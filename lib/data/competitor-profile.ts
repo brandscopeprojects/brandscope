@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
 import { getBrandCompetitors } from "@/lib/data/competitors";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { ThreatGaugeData, ThreatLevel } from "@/types/view-models";
 
 export { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
@@ -180,6 +181,14 @@ function normaliseAviatorBonus(value: unknown): AviatorBonusStructure | null {
 export async function getCompetitorProfile(
   competitorId: string,
 ): Promise<CompetitorProfileData | null> {
+  // Demo mode: return the SportyBet sample (competitorId ignored).
+  if (isDemoMode()) {
+    const { DEMO_COMPETITOR_PROFILE } = await import(
+      "@/lib/data/demo/competitor-profile"
+    );
+    return DEMO_COMPETITOR_PROFILE;
+  }
+
   const brand = await getCurrentBrand();
   if (!brand) return null;
 
