@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { Json } from "@/types/database.types";
 
 export { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
@@ -67,6 +68,10 @@ const PLATFORMS = [
  *  geo_cache is PER-BRAND (brand_id + scan_week, no competitor_id).
  *  Returns null when no row exists yet (pre-first-scan empty state). */
 export async function getGeoData(brand: BrandSummary): Promise<GeoData | null> {
+  if (isDemoMode()) {
+    const { DEMO_GEO } = await import("@/lib/data/demo");
+    return DEMO_GEO;
+  }
   const supabase = createClient();
 
   const { data: cache } = await supabase

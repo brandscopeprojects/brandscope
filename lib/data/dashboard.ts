@@ -13,6 +13,7 @@ import type {
 } from "@/types/view-models";
 import type { CompetitorState } from "@/types/cache-contracts";
 import type { BrandSummary } from "@/lib/data/brand";
+import { isDemoMode } from "@/lib/data/demo-mode";
 
 export { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
 
@@ -29,6 +30,10 @@ export type DashboardData = {
 /** Latest weekly_cache + open recommendations for a brand, mapped to view models.
  *  Returns null when no scan cache exists yet (pre-first-scan empty state). */
 export async function getDashboardData(brand: BrandSummary): Promise<DashboardData | null> {
+  if (isDemoMode()) {
+    const { DEMO_DASHBOARD } = await import("@/lib/data/demo");
+    return DEMO_DASHBOARD;
+  }
   const supabase = createClient();
 
   const { data: cache } = await supabase

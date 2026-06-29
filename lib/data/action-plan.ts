@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type {
   Recommendation,
   RecommendationStatus,
@@ -67,6 +68,10 @@ function toResult(
 export async function getActionPlanData(
   brand: BrandSummary,
 ): Promise<ActionPlanData | null> {
+  if (isDemoMode()) {
+    const { DEMO_ACTION_PLAN } = await import("@/lib/data/demo");
+    return DEMO_ACTION_PLAN;
+  }
   const supabase = createClient();
 
   // Latest action_plans row for this brand → scan_week + summary counts.

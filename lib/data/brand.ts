@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { isDemoMode } from "@/lib/data/demo-mode";
 
 export type BrandSummary = {
   id: string;
@@ -15,6 +16,10 @@ export type BrandSummary = {
  * page within the same request share a single query.
  */
 export const getCurrentBrand = cache(async function getCurrentBrand(): Promise<BrandSummary | null> {
+  if (isDemoMode()) {
+    const { DEMO_BRAND } = await import("@/lib/data/demo");
+    return DEMO_BRAND;
+  }
   const supabase = createClient();
   const { data } = await supabase
     .from("brands")

@@ -1,6 +1,16 @@
 import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { isDemoMode } from "@/lib/data/demo-mode";
+
+// RiversBet's competitors for demo mode (ids align with lib/data/demo.ts).
+const DEMO_COMPETITORS: BrandCompetitor[] = [
+  { id: "c-sporty", name: "SportyBet", domain: "sportybet.com", tier: "dominant", priority: 1 },
+  { id: "c-betking", name: "BetKing", domain: "betking.com", tier: "dominant", priority: 2 },
+  { id: "c-1xbet", name: "1xBet", domain: "1xbet.com", tier: "challenger", priority: 3 },
+  { id: "c-betway", name: "Betway", domain: "betway.com.ng", tier: "challenger", priority: 4 },
+  { id: "c-naira", name: "NairaBet", domain: "nairabet.com", tier: "mid_market", priority: 5 },
+];
 
 // Shared competitor-resolution helpers. Several cache tables key by
 // `competitor_id` (no brand_id) and resolve to the brand via brand_competitors
@@ -22,6 +32,7 @@ export type BrandCompetitor = {
 export const getBrandCompetitors = cache(async function getBrandCompetitors(
   brandId: string,
 ): Promise<BrandCompetitor[]> {
+  if (isDemoMode()) return DEMO_COMPETITORS;
   const supabase = createClient();
 
   const { data: links } = await supabase
