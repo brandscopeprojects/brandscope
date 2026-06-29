@@ -3251,6 +3251,18 @@ export type Database = {
     Functions: {
       get_user_brand_ids: { Args: never; Returns: string[] }
       get_user_organisation_id: { Args: never; Returns: string }
+      provision_brand: {
+        Args: {
+          p_brand_name: string
+          p_domain: string
+          p_industry?: string
+          p_markets: string[]
+          p_org_name: string
+          p_tier?: string
+          p_user_id: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

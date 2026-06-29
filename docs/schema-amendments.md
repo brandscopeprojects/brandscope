@@ -383,6 +383,18 @@ CREATE TRIGGER on_brand_created
 
 ---
 
+## H. `provision_brand()` RPC (Step 3.2 — onboarding primitive)
+Added in migration `12_provision_brand.sql`. Transactional org + owner-membership + brand creation, called server-side via the service role during onboarding.
+```
+provision_brand(p_user_id uuid, p_org_name text, p_brand_name text, p_domain text,
+                p_markets text[], p_industry text='igaming', p_tier text='challenger') RETURNS uuid
+```
+- `SECURITY DEFINER`, `search_path = public`; one transaction (org → `organisation_members` owner=`brand_admin` → brand).
+- Slugs auto-generated from name + a 6-char uuid suffix (satisfies the UNIQUE slug constraints).
+- The brand insert fires `handle_new_brand()` → seeds `brand_preferences` + `alert_configs`.
+- EXECUTE revoked from `public`; granted only to `service_role`. Wrapper: `lib/data/onboarding.ts → provisionBrand()`.
+- Verified live (org/member/brand created, both config rows seeded), then test data removed.
+
 ## G. Competitor cap (Decision 1)
 Schema comment on `brands` ("MVP one brand per org") unchanged. **Competitor cap = 10 per brand**, default starting point 5 in onboarding. Enforce at the application layer (onboarding step 4 + `/admin/competitors`), not via DB constraint (Growth plan = 10; Professional = 25 is Phase 2+).
 
