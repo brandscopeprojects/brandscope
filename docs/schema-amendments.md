@@ -326,6 +326,49 @@ CREATE TRIGGER set_updated_at BEFORE UPDATE ON dead_letter_queue FOR EACH ROW EX
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON geo_query_templates FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 ```
 
+### E.1 Auth + seeding triggers (Gap 1 — approved)
+Completes what the schema implied but never wrote: auto-create `profiles` on signup, and seed the singleton config rows (`brand_preferences`, `alert_configs`) on brand creation.
+
+```sql
+-- 1. Create a profiles row automatically when an auth user is created.
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name, role)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    NULLIF(NEW.raw_user_meta_data->>'full_name', ''),
+    COALESCE(NEW.raw_user_meta_data->>'role', 'brand_admin')
+  )
+  ON CONFLICT (id) DO NOTHING;          -- idempotent
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+
+-- 2. Seed the singleton config rows when a brand is created.
+--    brand_preferences and alert_configs are UNIQUE(brand_id) with all-default columns,
+--    so inserting just brand_id materialises the defaults the app assumes exist.
+CREATE OR REPLACE FUNCTION handle_new_brand()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.brand_preferences (brand_id) VALUES (NEW.id)
+    ON CONFLICT (brand_id) DO NOTHING;
+  INSERT INTO public.alert_configs (brand_id) VALUES (NEW.id)
+    ON CONFLICT (brand_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE TRIGGER on_brand_created
+  AFTER INSERT ON brands
+  FOR EACH ROW EXECUTE FUNCTION handle_new_brand();
+```
+
 ---
 
 ## F. Seed data required (load before first scan)

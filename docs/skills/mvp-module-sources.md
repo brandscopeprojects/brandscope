@@ -25,9 +25,10 @@
 - **Haiku:** classify snippet ownership, summarise schema types per competitor.
 
 ### 4. Tech Stack & Ad Network  ✓ FULL  → writes `tech_stack_cache` (+ `competitor_changes` on webhook)
-- **Endpoint (CORRECTED):** DetectZeStack `GET https://detectzestack.com/analyze?url={domain}`, header **`X-API-Key`**. Webhook `POST /api/webhooks/detectzestack` (HMAC-SHA256).
-  - ⚠️ The API-map's `https://api.detectzestack.com/v1/detect` is **wrong** — that host does not resolve (DNS failure, verified). Use `detectzestack.com/analyze`.
-  - ⚠️ **BLOCKER:** the stored key returns `401 invalid API key` against the real endpoint (verified). A valid direct-API key is required before this module can run (or switch to the RapidAPI route: host `detectzestack.p.rapidapi.com`, header `X-RapidAPI-Key` — confirm which with owner).
+- **Endpoint (CONFIRMED):** `GET https://detectzestack.com/analyze?url={domain}`, header **`X-API-Key: {DETECTZESTACK_API_KEY}`**. Webhook `POST /api/webhooks/detectzestack` (HMAC-SHA256).
+  - The API-map's `https://api.detectzestack.com/v1/detect` is **wrong** — that host does not resolve (DNS failure, verified). Always use `detectzestack.com/analyze`.
+  - **RapidAPI alternative** (if owner uses the RapidAPI route instead of the direct key): host `https://detectzestack.p.rapidapi.com/analyze?url={domain}`, headers `X-RapidAPI-Key: {key}` + `X-RapidAPI-Host: detectzestack.p.rapidapi.com`.
+  - ⚠️ **Pending owner:** a valid key for the chosen route. The currently-stored key returns `401 invalid API key` against the direct endpoint (verified). Owner will confirm direct-vs-RapidAPI + supply a valid key before Sprint 3 Step 18. Does **not** block Sprint 1.
 - **Haiku:** none — response is already structured. (Spend-intensity scoring computed in code.)
 
 ### 5. App Store  ✓ FULL  → writes `product_intel_cache` / `customer_intel_cache`
