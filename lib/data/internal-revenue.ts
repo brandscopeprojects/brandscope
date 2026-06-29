@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { StatusTone } from "@/components/intelligence/StatusPill";
 
 /**
@@ -171,6 +172,16 @@ export type InternalRevenueData = {
  * decides between the empty state and the populated sections.
  */
 export async function getInternalRevenue(): Promise<InternalRevenueData> {
+  // Demo short-circuit: serve the richly-populated sample dataset so the
+  // internal Revenue console is fully navigable without Supabase. Real customers
+  // keep this OFF (it suppresses live data). Mirrors the live return type exactly.
+  if (isDemoMode()) {
+    const { DEMO_INTERNAL_REVENUE } = await import(
+      "@/lib/data/demo/internal-revenue"
+    );
+    return DEMO_INTERNAL_REVENUE;
+  }
+
   const supabase = createAdminClient();
 
   const [metricsRes, subsRes, churnRes] = await Promise.all([
