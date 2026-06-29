@@ -39,11 +39,12 @@ export function CompetitorProfileTabs({
 
   return (
     <div className="space-y-5">
-      {/* Tab bar — wraps on mobile. Active tab = ink underline (not cobalt). */}
+      {/* Tab bar — scrolls horizontally on narrow screens (no wrapped
+          underline rows). Active tab = ink underline (not cobalt). */}
       <div
         role="tablist"
         aria-label="Competitor profile sections"
-        className="flex flex-wrap gap-1 border-b border-divider"
+        className="-mx-1 flex gap-1 overflow-x-auto border-b border-divider px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {TABS.map((tab) => {
           const isActive = tab.key === active;
@@ -57,7 +58,7 @@ export function CompetitorProfileTabs({
               id={`competitor-tab-${tab.key}`}
               onClick={() => setActive(tab.key)}
               className={[
-                "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                "-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors",
                 isActive
                   ? "border-ink text-ink"
                   : "border-transparent text-ink-secondary hover:text-ink",

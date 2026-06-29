@@ -45,7 +45,42 @@ function score(value: number | null): string | number {
   return value == null ? "—" : value;
 }
 
-// One row per Digital metric for the DataTable.
+// Compact headline figure for the Syne stat cards (2.4M / 847K). Returns the
+// numeric string + a separate unit so StatStrip keeps the suffix in faint ink.
+function compact(value: number | null): { value: string; unit?: string } {
+  if (value == null) return { value: "—" };
+  if (value >= 1_000_000) {
+    return { value: (value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1), unit: "M" };
+  }
+  if (value >= 1_000) {
+    return { value: (value / 1_000).toFixed(value % 1_000 === 0 ? 0 : 1), unit: "K" };
+  }
+  return { value: String(value) };
+}
+
+// Headline digital metrics, surfaced as big Syne stat cards (§12) — the key
+// numbers (2.4M traffic, 847K followers, 23 ads, 14 tools) read at a glance.
+function digitalStats(d: DigitalProfile): Stat[] {
+  const traffic = compact(d.estimatedMonthlyTraffic);
+  const followers = compact(d.socialFollowersTotal);
+  return [
+    { label: "Monthly traffic", value: traffic.value, unit: traffic.unit },
+    {
+      label: "Organic / paid split",
+      value:
+        d.organicTrafficPct == null || d.paidTrafficPct == null
+          ? "—"
+          : `${d.organicTrafficPct}/${d.paidTrafficPct}`,
+      unit: d.organicTrafficPct == null || d.paidTrafficPct == null ? undefined : "%",
+    },
+    { label: "Social followers", value: followers.value, unit: followers.unit },
+    { label: "Active ads", value: score(d.activeAdsCount) },
+    { label: "Domain authority", value: score(d.domainAuthority) },
+    { label: "Tech stack size", value: score(d.techStackCount) },
+  ];
+}
+
+// One row per Digital metric for the supplementary DataTable (exact values).
 type DigitalRow = { metric: string; value: string };
 
 function digitalRows(d: DigitalProfile): DigitalRow[] {
@@ -149,13 +184,19 @@ export default async function CompetitorProfilePage({
     />
   );
 
-  // ---- Digital tab: domain authority / traffic / tech stack / ads. ----
+  // ---- Digital tab: headline Syne stat cards + exact-value detail table. ----
   const digitalSection = digital ? (
-    <DataTable
-      columns={DIGITAL_COLUMNS}
-      rows={digitalRows(digital)}
-      getRowKey={(r) => r.metric}
-    />
+    <div className="space-y-5">
+      <StatStrip stats={digitalStats(digital)} />
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-ink">Full digital footprint</h3>
+        <DataTable
+          columns={DIGITAL_COLUMNS}
+          rows={digitalRows(digital)}
+          getRowKey={(r) => r.metric}
+        />
+      </div>
+    </div>
   ) : (
     <EmptyState
       intent="scanning"
