@@ -40,4 +40,25 @@
   .animate-radar-pulse {
     animation: radar-pulse 2s ease-in-out infinite;
   }
+
+  /* Market Position Map (Screen 3, light theme) — own-brand marker pulse.
+     A gentle expanding cobalt halo so the user's own brand is unmistakable
+     without being distracting. Used by ScatterMap's own-brand dot. */
+  @keyframes brand-pulse {
+    0% {
+      r: 6;
+      opacity: 0.45;
+    }
+    70% {
+      r: 22;
+      opacity: 0;
+    }
+    100% {
+      r: 22;
+      opacity: 0;
+    }
+  }
+  .animate-brand-pulse {
+    animation: brand-pulse 2.4s ease-out infinite;
+  }
 }

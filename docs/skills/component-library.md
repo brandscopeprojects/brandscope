@@ -137,3 +137,16 @@ render light-on-dark (white/white-tinted text), cobalt is the progress/own-brand
 - `AssetGenerationResult` is **always inline**, never a modal.
 - Own-brand marker is **always cobalt**; status colours never decorative.
 - If a screen needs a component not listed here → add it to this file (path + props + tokens + screens) **before** building it.
+
+---
+
+## Sprint 5 reconciliation — canonical props (supersede the sketches above)
+Built in Sprint 5; canonical prop types live in `types/view-models.ts`.
+- `ScatterMap` → `{ brand: ScatterPoint; competitors: ScatterPoint[]; onCompetitorClick?(id) }`.
+- `CompetitiveRadar` → `{ data: RadarData }` (series are `(number|null)[]`; a **null axis renders muted "PHASE 2", never plotted as 0**).
+- `SOVDonut` → `{ slices: SovSlice[] }` (own slice `isOwnBrand` = cobalt; centre % from own slice).
+- `ThreatGauge` → `{ data: ThreatGaugeData }` (custom SVG arc; bands 0–40/40–60/60–100).
+- `GenerateAssetButton` → `{ recommendationId: string; onGenerate?() }` (the `/api/assets/generate` wiring is a later sprint).
+- `AssetGenerationResult` → `{ loading?: boolean; asset?: { type; title; sections:{label,body}[]; channels?; budget? } }` (inline, never a modal).
+- `StatusControls` (new) → `components/action/StatusControls.tsx` `{ status; onAccept; onSnooze; onDismiss }`.
+- Chart components carry small inline `TOKEN` hex maps (Recharts/SVG fills can't read Tailwind classes) mirroring `tailwind.config.ts`; SOV donut uses a neutral grey ramp (`#8A8A96/#B4B4BE/#CBCBD2`) beyond the 2 palette greys for >2 competitor slices.
