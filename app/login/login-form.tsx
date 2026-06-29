@@ -31,7 +31,15 @@ export function LoginForm() {
     const supabase = createClient();
 
     if (mode === "signup") {
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        // Send the confirmation link back to THIS origin's callback route (which
+        // exchanges the PKCE code for a session), not the dashboard Site URL.
+        // Works on prod or localhost since it uses the live origin. The exact URL
+        // must also be allow-listed in Supabase → Auth → URL Configuration.
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      });
       if (error) {
         setError(error.message);
         setLoading(false);
