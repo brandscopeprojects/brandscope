@@ -66,8 +66,8 @@ CREATE POLICY "chat_messages_own_brands" ON chat_messages
 
 ---
 
-## Class 2 — NO RLS, service-role-only (Decision 2 + internal)
-**Do NOT** `ENABLE ROW LEVEL SECURITY`. **Do NOT** grant to anon/authenticated. Access only via server API routes / Edge Functions with `SUPABASE_SERVICE_ROLE_KEY`.
+## Class 2 — Service-role-only: ENABLE RLS, NO policy (Decision 2 + internal)
+**`ALTER TABLE x ENABLE ROW LEVEL SECURITY;` with NO policy.** This is the *correct* Supabase enforcement: a public-schema table with RLS **disabled** is exposed to the REST API (anon/authenticated). RLS **enabled + no policy** blocks anon/authenticated entirely while `service_role` bypasses RLS. (No policy is added → honours Decision 2.) Access only via server API routes / Edge Functions with `SUPABASE_SERVICE_ROLE_KEY`.
 
 Identity/billing: `profiles`, `organisations`, `organisation_members`, `subscriptions`, `payment_history`, `usage_metrics`.
 Logs/internal: `agent_job_logs`, `prompt_versions`, `api_health_logs`, `cron_job_logs`, `audit_logs`, `feature_health_logs`.
@@ -77,9 +77,14 @@ New internal/config: `agents`, `agent_skills`, `model_router_config`, `revenue_m
 
 ---
 
-## Class 3 — NO RLS, shared reference (cross-brand readable by design)
+## Class 3 — Shared reference: ENABLE RLS + SELECT-to-authenticated (cross-brand readable by design)
 `competitors`, `competitor_profiles`, `competitor_changes`, `regulatory_documents`, `document_chunks`.
-These are shared master data (one row per domain / per document). Readable by any authenticated user. (`tech_stack_cache` is intentionally NOT in this class — it's brand-scoped via the join policy so a brand sees only the tech of competitors it tracks.)
+Shared master data (one row per domain / per document). Enable RLS + a **read-only policy for `authenticated`**:
+```sql
+ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "<table>_read_authenticated" ON <table> FOR SELECT TO authenticated USING (true);
+```
+This lets any signed-in user read (cross-brand by design), blocks `anon`, and keeps writes service-role-only. (NOT "no RLS" — that would also expose them to `anon` and allow writes via the API.) `tech_stack_cache` is intentionally NOT in this class — it's brand-scoped via the join policy.
 
 ---
 

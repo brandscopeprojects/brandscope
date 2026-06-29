@@ -295,14 +295,16 @@ CREATE POLICY "chat_messages_own_brands" ON chat_messages
   );
 ```
 
-### D.2 Service-role-only tables — NO RLS (Decision 2)
-Do **not** enable RLS on these; accessed exclusively server-side via service role:
-`profiles`, `organisations`, `organisation_members`, `subscriptions`, `payment_history`, `usage_metrics`, plus all internal/log/config tables: `agent_job_logs`, `prompt_versions`, `api_health_logs`, `cron_job_logs`, `audit_logs`, and all new tables in §C (`agents`, `agent_skills`, `model_router_config`, `revenue_metrics`, `churn_events`, `active_sessions`, `failed_logins`, `rbac_config`, `system_health`, `dead_letter_queue`, `geo_query_templates`, `ingestion_logs`).
+### D.2 Service-role-only tables — ENABLE RLS, NO policy (Decision 2) [corrected — see §11]
+`profiles`, `organisations`, `organisation_members`, `subscriptions`, `payment_history`, `usage_metrics`, plus all internal/log/config tables: `agent_job_logs`, `prompt_versions`, `api_health_logs`, `cron_job_logs`, `audit_logs`, `feature_health_logs`, and all new tables in §C (`agents`, `agent_skills`, `model_router_config`, `revenue_metrics`, `churn_events`, `active_sessions`, `failed_logins`, `rbac_config`, `system_health`, `dead_letter_queue`, `geo_query_templates`, `ingestion_logs`).
 
-> Critical: because these have no RLS, they must **never** be granted to anon/authenticated and must **never** be queried with the anon key. All access goes through server-side API routes / Edge Functions using `SUPABASE_SERVICE_ROLE_KEY`.
+> **Correction (verified against the Supabase linter):** these must have **RLS ENABLED with NO policy** — NOT "no RLS". In Supabase, a public-schema table with RLS *disabled* is exposed to the REST API for anon/authenticated. RLS enabled + no policy blocks anon/authenticated while `service_role` bypasses. No policy is added → still honours Decision 2. Implemented in migration `11_rls_hardening.sql`. All access goes server-side via `SUPABASE_SERVICE_ROLE_KEY`.
 
-### D.3 Shared reference tables — intentionally NO RLS (readable cross-brand)
-`competitors`, `competitor_profiles`, `competitor_changes` are shared master data (one row per domain, read by all brands). They remain without RLS by design. (`tech_stack_cache` is the exception — it gets the join policy in D.1 so a brand only sees tech data for competitors it tracks.)
+### D.3 Shared reference tables — ENABLE RLS + SELECT-to-authenticated [corrected — see §11]
+`competitors`, `competitor_profiles`, `competitor_changes`, `regulatory_documents`, `document_chunks` are shared master data (read cross-brand). They get **RLS enabled + a read-only policy for `authenticated`** (`FOR SELECT TO authenticated USING (true)`) — readable by any signed-in user, `anon` blocked, writes service-role-only. (Not "no RLS", which would also expose them to `anon` and allow API writes.) `tech_stack_cache` is the exception — it gets the brand-scoped join policy in D.1.
+
+### D.4 `feature_health_logs.status` — add `not_applicable_mvp`
+The original CHECK is `('passed','partial','failed')`. Extended to include **`not_applicable_mvp`** so Phase-2/excluded features can be logged and excluded from the brand health %, per `docs/skills/feature-health-registry.md`. Applied in migration `03`.
 
 ---
 
