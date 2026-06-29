@@ -36,8 +36,27 @@ export function UrgencyTag({ urgency }: { urgency: Urgency }) {
   );
 }
 
-// Humanise raw category slugs (e.g. 'traffic_seo' → 'Traffic SEO', 'geo_aeo' → 'Geo Aeo').
+// Canonical category labels (match the nav / screen-specs naming). Unknown slugs
+// fall back to title-case.
+const CATEGORY_LABEL: Record<string, string> = {
+  promotions: "Promotions",
+  traffic_seo: "Traffic & SEO",
+  geo_aeo: "GEO / AEO",
+  geo_aeo_seo: "GEO / AEO / SEO",
+  tech_stack: "Tech Stack",
+  social_ads: "Social & Ads",
+  customer_intel: "Customers",
+  customer: "Customers",
+  product_intel: "Product",
+  regulatory: "Regulatory",
+  hiring_signals: "Hiring & Signals",
+  hiring: "Hiring & Signals",
+  market_intel: "Market Intel",
+};
+
 function formatCategory(category: string): string {
+  const key = category.toLowerCase();
+  if (CATEGORY_LABEL[key]) return CATEGORY_LABEL[key];
   return category
     .replace(/[_-]+/g, " ")
     .trim()

@@ -4,7 +4,7 @@ import { updateSession } from "@/lib/supabase/middleware";
 import type { Database } from "@/types/database.types";
 
 // Route protection (data-flow-rules: brand reads SSR + RLS; admin areas role-gated).
-const PUBLIC_PREFIXES = ["/login", "/auth", "/unauthorized"];
+const PUBLIC_PREFIXES = ["/login", "/auth", "/unauthorized", "/preview"];
 const INTERNAL_ADMIN_PREFIX = "/brandscope-admin";
 const BRAND_ADMIN_PREFIX = "/admin";
 
