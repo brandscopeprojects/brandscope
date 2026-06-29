@@ -58,14 +58,14 @@ export function AutoDetectInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onBlur={runDetect}
-          className={`flex-1 rounded-chip border border-divider bg-card px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-cobalt ${className}`}
+          className={`min-w-0 flex-1 rounded-chip border border-divider bg-card px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-cobalt ${className}`}
           {...rest}
         />
         <button
           type="button"
           onClick={runDetect}
           disabled={busy || !value.trim()}
-          className="shrink-0 rounded-chip border border-cobalt px-3 py-2 text-xs font-medium text-cobalt transition-colors hover:bg-cobalt/10 disabled:opacity-50"
+          className="shrink-0 whitespace-nowrap rounded-chip border border-cobalt px-3 py-2 text-xs font-medium text-cobalt transition-colors hover:bg-cobalt/10 disabled:opacity-50"
         >
           {busy ? "Detecting…" : buttonLabel}
         </button>
