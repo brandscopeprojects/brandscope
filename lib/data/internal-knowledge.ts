@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { StatusTone } from "@/components/intelligence/StatusPill";
 
 // Internal-admin Knowledge Base data layer (Screen 27, /brandscope-admin/
@@ -129,6 +130,13 @@ function chunksFromDetail(detail: unknown): number | null {
  * honest empty state when nothing has been ingested yet.
  */
 export async function getKnowledgeBaseData(): Promise<KnowledgeBaseData> {
+  if (isDemoMode()) {
+    const { DEMO_INTERNAL_KNOWLEDGE } = await import(
+      "@/lib/data/demo/internal-knowledge"
+    );
+    return DEMO_INTERNAL_KNOWLEDGE;
+  }
+
   const admin = createAdminClient();
 
   // Documents — latest first. Never select chunk embeddings here.
