@@ -7,6 +7,7 @@ import {
   competitorNameMap,
 } from "@/lib/data/competitors";
 import type { ScatterPoint } from "@/types/view-models";
+import { isDemoMode } from "@/lib/data/demo-mode";
 
 export { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
 
@@ -71,6 +72,11 @@ function normaliseDetail(value: unknown): CompetitorChangeDetail | null {
 export async function getMarketIntelData(
   brand: BrandSummary,
 ): Promise<MarketIntelData> {
+  if (isDemoMode()) {
+    const { DEMO_MARKET_INTEL } = await import("@/lib/data/demo/market-intel");
+    return DEMO_MARKET_INTEL;
+  }
+
   const supabase = createClient();
 
   // Reuse dashboard.ts' weekly_cache → ScatterPoint mapping (do NOT duplicate).

@@ -6,6 +6,7 @@ import {
   latestScanWeek,
   type BrandCompetitor,
 } from "@/lib/data/competitors";
+import { isDemoMode } from "@/lib/data/demo-mode";
 
 // Social & Ads Intelligence data layer (Screen 8, /social-ads).
 //
@@ -39,6 +40,11 @@ const asStringArray = (v: string[] | null): string[] => v ?? [];
 /** Latest ad-network presence for the brand's competitors, mapped to view models.
  *  Returns null when no tech_stack_cache rows exist yet (pre-first-scan state). */
 export async function getSocialAdsData(): Promise<SocialAdsData | null> {
+  if (isDemoMode()) {
+    const { DEMO_SOCIAL_ADS } = await import("@/lib/data/demo/social-ads");
+    return DEMO_SOCIAL_ADS;
+  }
+
   const brand = await getCurrentBrand();
   if (!brand) return null;
 
