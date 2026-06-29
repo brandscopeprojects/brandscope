@@ -3,11 +3,12 @@
 // CustomersTrafficSources — Screen 11 (Customer Intelligence). Inferred traffic
 // channel mix (DataForSEO) for one selected competitor, as a glanceable donut.
 // traffic_sources is PER-COMPETITOR, so a small selector switches which
-// competitor's mix is shown. These are competitors (not the own brand), so the
-// ring uses the neutral grey ramp — cobalt is reserved for the own-brand marker
-// and is never decorative (ui-constraints §2.2). Recharts needs colour strings,
-// so the inline TOKEN map mirrors tailwind.config.ts (the one allowed place to
-// name hexes — same pattern as SOVDonut/SeoTrafficChart). Data from SSR props.
+// competitor's mix is shown. A competitor's ring uses the neutral grey ramp; the
+// own brand (competitorId === ownBrandId) renders in a cobalt ramp — cobalt is
+// the single own-brand marker and is never decorative (ui-constraints §2.2/§12,
+// "cobalt = own brand" in charts). Recharts needs colour strings, so the inline
+// TOKEN map mirrors tailwind.config.ts (the one allowed place to name hexes —
+// same pattern as SOVDonut/SeoTrafficChart). Data from SSR props.
 
 import { useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
@@ -17,9 +18,11 @@ const TOKEN = {
   ink: "#141416",
   inkSecondary: "#6B6B78",
   card: "#FFFFFF",
-  // Neutral grey ramp (mirrors the SOV donut convention) — no status colour,
-  // no cobalt, since these slices are a competitor's channels, not the own brand.
+  // Neutral grey ramp (mirrors the SOV donut convention) — used for competitor
+  // channels, which carry no status meaning.
   greyRamp: ["#6B6B78", "#8A8A96", "#9999A8", "#B4B4BE", "#CBCBD2"],
+  // Cobalt ramp — ONLY for the own brand's own channels (own-brand marker).
+  cobaltRamp: ["#2B5CE6", "#5277EB", "#7A93F0", "#A2AFF5", "#C9D2FA"],
 } as const;
 
 type Slice = { source: string; pct: number };
@@ -43,8 +46,11 @@ function DonutTooltip(props: {
 
 export function CustomersTrafficSources({
   competitors,
+  ownBrandId,
 }: {
   competitors: CompetitorCustomerIntel[];
+  /** The brand's own competitorId — its ring renders cobalt, others grey. */
+  ownBrandId?: string;
 }) {
   // Only competitors that actually have a traffic-source mix this week.
   const withSources = competitors.filter((c) => c.trafficSources.length > 0);
@@ -65,15 +71,28 @@ export function CustomersTrafficSources({
 
   const selected =
     withSources.find((c) => c.competitorId === selectedId) ?? withSources[0];
+  const isOwnBrand = selected.competitorId === ownBrandId;
+  const ramp = isOwnBrand ? TOKEN.cobaltRamp : TOKEN.greyRamp;
   const slices: Slice[] = selected.trafficSources.map((t) => ({
     source: t.source,
     pct: t.pct,
   }));
 
   return (
-    <div className="rounded-card bg-card p-4 shadow-sh1">
+    <div
+      className={`rounded-card p-4 shadow-sh1 ${
+        isOwnBrand ? "bg-cobalt/5" : "bg-card"
+      }`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-ink-secondary">Traffic channel mix</p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-ink-secondary">Traffic channel mix</p>
+          {isOwnBrand && (
+            <span className="rounded-chip bg-cobalt/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-cobalt">
+              You
+            </span>
+          )}
+        </div>
         <label className="flex items-center gap-2 text-xs text-ink-secondary">
           <span className="sr-only">Select competitor</span>
           <select
@@ -83,7 +102,7 @@ export function CustomersTrafficSources({
           >
             {withSources.map((c) => (
               <option key={c.competitorId} value={c.competitorId}>
-                {c.name}
+                {c.competitorId === ownBrandId ? `${c.name} (You)` : c.name}
               </option>
             ))}
           </select>
@@ -111,7 +130,7 @@ export function CustomersTrafficSources({
                 {slices.map((s, i) => (
                   <Cell
                     key={s.source}
-                    fill={TOKEN.greyRamp[Math.min(i, TOKEN.greyRamp.length - 1)]}
+                    fill={ramp[Math.min(i, ramp.length - 1)]}
                   />
                 ))}
               </Pie>
@@ -126,8 +145,7 @@ export function CustomersTrafficSources({
               <span
                 className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{
-                  backgroundColor:
-                    TOKEN.greyRamp[Math.min(i, TOKEN.greyRamp.length - 1)],
+                  backgroundColor: ramp[Math.min(i, ramp.length - 1)],
                 }}
                 aria-hidden
               />

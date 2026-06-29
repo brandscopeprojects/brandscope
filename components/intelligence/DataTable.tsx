@@ -13,6 +13,9 @@ export type Column<T> = {
   align?: "left" | "right" | "center";
   /** Use mono numerals for this column's cells. */
   mono?: boolean;
+  /** Allow this column's cells to wrap (default: no-wrap so the table scrolls
+   *  horizontally on mobile instead of collapsing columns). Use for long prose. */
+  wrap?: boolean;
 };
 
 export function DataTable<T>({
@@ -40,7 +43,7 @@ export function DataTable<T>({
             {columns.map((c) => (
               <th
                 key={c.key}
-                className={`px-4 py-2.5 text-xs font-medium text-ink-secondary ${alignClass(c.align)}`}
+                className={`whitespace-nowrap px-4 py-2.5 text-xs font-medium text-ink-secondary ${alignClass(c.align)}`}
               >
                 {c.header}
               </th>
@@ -73,6 +76,7 @@ export function DataTable<T>({
                       key={c.key}
                       className={[
                         "px-4 py-2.5 text-ink",
+                        c.wrap ? "" : "whitespace-nowrap",
                         alignClass(c.align),
                         c.mono ? "font-mono text-[13px]" : "",
                         highlighted ? "font-medium" : "",

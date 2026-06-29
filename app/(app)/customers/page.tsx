@@ -122,7 +122,7 @@ export default async function CustomersPage() {
         title="Complaint themes"
         description="Recurring complaints mined from app reviews, tinted by sentiment."
       >
-        <CustomersComplaintThemes competitors={competitors} />
+        <CustomersComplaintThemes competitors={competitors} ownBrandId={brand.id} />
       </SectionCard>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -130,14 +130,14 @@ export default async function CustomersPage() {
           title="Traffic channels"
           description="Inferred channel mix for a selected competitor this week."
         >
-          <CustomersTrafficSources competitors={competitors} />
+          <CustomersTrafficSources competitors={competitors} ownBrandId={brand.id} />
         </SectionCard>
 
         <SectionCard
           title="Inferred demographics"
           description="Age and gender bands inferred from audience signals."
         >
-          <CustomersDemographics competitors={competitors} />
+          <CustomersDemographics competitors={competitors} ownBrandId={brand.id} />
         </SectionCard>
       </div>
     </div>

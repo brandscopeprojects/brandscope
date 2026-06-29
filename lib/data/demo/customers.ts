@@ -7,23 +7,13 @@
 // fixture matches CustomerIntelData EXACTLY — no fields invented beyond the type.
 // complaint_themes sentiment is normalised -1..1; complaints are negative by
 // nature, so every theme here is scored < 0 (the UI never tints a complaint
-// green). RiversBet is the own brand; competitors use the neutral grey ramp.
+// green). RiversBet is the own brand (competitorId === DEMO_BRAND.id =
+// "demo-riversbet"); the components mark it in cobalt. Tiers use the real
+// TierBadge vocabulary (dominant / challenger / mid_market / niche) so they
+// never render a raw enum. Demographics vary per competitor — plausible Nigeria
+// audience splits — so the page never looks templated.
 
 import type { CustomerIntelData } from "@/lib/data/customers";
-
-// Shared Nigeria audience inference from the mockup (age + gender bands).
-const NG_DEMOGRAPHICS = {
-  ageBands: [
-    { label: "18-24", pct: 25 },
-    { label: "25-34", pct: 46 },
-    { label: "35-44", pct: 19 },
-    { label: "45+", pct: 10 },
-  ],
-  gender: [
-    { label: "Male", pct: 68 },
-    { label: "Female", pct: 32 },
-  ],
-};
 
 export const DEMO_CUSTOMERS: CustomerIntelData = {
   scanWeek: "2025-W20",
@@ -41,7 +31,18 @@ export const DEMO_CUSTOMERS: CustomerIntelData = {
         { theme: "Bonus Issues", count: 22, sentiment: -0.28 },
         { theme: "App Performance", count: 18, sentiment: -0.19 },
       ],
-      demographics: NG_DEMOGRAPHICS,
+      demographics: {
+        ageBands: [
+          { label: "18-24", pct: 27 },
+          { label: "25-34", pct: 47 },
+          { label: "35-44", pct: 18 },
+          { label: "45+", pct: 8 },
+        ],
+        gender: [
+          { label: "Male", pct: 71 },
+          { label: "Female", pct: 29 },
+        ],
+      },
       geographic: [
         { region: "Lagos", pct: 45 },
         { region: "Abuja", pct: 20 },
@@ -69,7 +70,18 @@ export const DEMO_CUSTOMERS: CustomerIntelData = {
         { theme: "Withdrawal Delays", count: 24, sentiment: -0.58 },
         { theme: "App Performance", count: 20, sentiment: -0.22 },
       ],
-      demographics: NG_DEMOGRAPHICS,
+      demographics: {
+        ageBands: [
+          { label: "18-24", pct: 31 },
+          { label: "25-34", pct: 44 },
+          { label: "35-44", pct: 17 },
+          { label: "45+", pct: 8 },
+        ],
+        gender: [
+          { label: "Male", pct: 74 },
+          { label: "Female", pct: 26 },
+        ],
+      },
       geographic: [
         { region: "Lagos", pct: 41 },
         { region: "Abuja", pct: 22 },
@@ -86,7 +98,7 @@ export const DEMO_CUSTOMERS: CustomerIntelData = {
     {
       competitorId: "demo-riversbet",
       name: "RiversBet",
-      tier: "self",
+      tier: "challenger",
       appRating: 4.1,
       appReviewCount: 12400,
       sentiment: 0.4,
@@ -96,7 +108,18 @@ export const DEMO_CUSTOMERS: CustomerIntelData = {
         { theme: "Bonus Issues", count: 21, sentiment: -0.3 },
         { theme: "Customer Service", count: 19, sentiment: -0.37 },
       ],
-      demographics: NG_DEMOGRAPHICS,
+      demographics: {
+        ageBands: [
+          { label: "18-24", pct: 23 },
+          { label: "25-34", pct: 45 },
+          { label: "35-44", pct: 21 },
+          { label: "45+", pct: 11 },
+        ],
+        gender: [
+          { label: "Male", pct: 65 },
+          { label: "Female", pct: 35 },
+        ],
+      },
       geographic: [
         { region: "Port Harcourt", pct: 38 },
         { region: "Lagos", pct: 30 },
@@ -114,7 +137,7 @@ export const DEMO_CUSTOMERS: CustomerIntelData = {
     {
       competitorId: "demo-betking",
       name: "BetKing",
-      tier: "tier_1",
+      tier: "challenger",
       appRating: 4.0,
       appReviewCount: 71500,
       sentiment: 0.12,
@@ -124,7 +147,18 @@ export const DEMO_CUSTOMERS: CustomerIntelData = {
         { theme: "Bonus Issues", count: 25, sentiment: -0.31 },
         { theme: "App Performance", count: 17, sentiment: -0.2 },
       ],
-      demographics: NG_DEMOGRAPHICS,
+      demographics: {
+        ageBands: [
+          { label: "18-24", pct: 24 },
+          { label: "25-34", pct: 48 },
+          { label: "35-44", pct: 19 },
+          { label: "45+", pct: 9 },
+        ],
+        gender: [
+          { label: "Male", pct: 69 },
+          { label: "Female", pct: 31 },
+        ],
+      },
       geographic: [
         { region: "Lagos", pct: 43 },
         { region: "Abuja", pct: 19 },
@@ -141,7 +175,7 @@ export const DEMO_CUSTOMERS: CustomerIntelData = {
     {
       competitorId: "demo-nairabet",
       name: "NairaBet",
-      tier: "tier_2",
+      tier: "mid_market",
       appRating: 3.8,
       appReviewCount: 38900,
       sentiment: -0.05,
@@ -151,7 +185,18 @@ export const DEMO_CUSTOMERS: CustomerIntelData = {
         { theme: "Bonus Issues", count: 20, sentiment: -0.29 },
         { theme: "App Performance", count: 18, sentiment: -0.21 },
       ],
-      demographics: NG_DEMOGRAPHICS,
+      demographics: {
+        ageBands: [
+          { label: "18-24", pct: 20 },
+          { label: "25-34", pct: 43 },
+          { label: "35-44", pct: 24 },
+          { label: "45+", pct: 13 },
+        ],
+        gender: [
+          { label: "Male", pct: 66 },
+          { label: "Female", pct: 34 },
+        ],
+      },
       geographic: [
         { region: "Lagos", pct: 47 },
         { region: "Abuja", pct: 18 },

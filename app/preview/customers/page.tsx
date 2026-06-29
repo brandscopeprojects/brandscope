@@ -10,6 +10,7 @@ import { CustomersComplaintThemes } from "@/components/intelligence/CustomersCom
 import { CustomersTrafficSources } from "@/components/intelligence/CustomersTrafficSources";
 import { CustomersDemographics } from "@/components/intelligence/CustomersDemographics";
 import { DEMO_CUSTOMERS } from "@/lib/data/demo/customers";
+import { DEMO_BRAND } from "@/lib/data/demo";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +98,7 @@ export default function PreviewCustomers() {
             title="Complaint themes"
             description="Recurring complaints mined from app reviews, tinted by sentiment."
           >
-            <CustomersComplaintThemes competitors={competitors} />
+            <CustomersComplaintThemes competitors={competitors} ownBrandId={DEMO_BRAND.id} />
           </SectionCard>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -105,14 +106,14 @@ export default function PreviewCustomers() {
               title="Traffic channels"
               description="Inferred channel mix for a selected competitor this week."
             >
-              <CustomersTrafficSources competitors={competitors} />
+              <CustomersTrafficSources competitors={competitors} ownBrandId={DEMO_BRAND.id} />
             </SectionCard>
 
             <SectionCard
               title="Inferred demographics"
               description="Age and gender bands inferred from audience signals."
             >
-              <CustomersDemographics competitors={competitors} />
+              <CustomersDemographics competitors={competitors} ownBrandId={DEMO_BRAND.id} />
             </SectionCard>
           </div>
         </div>

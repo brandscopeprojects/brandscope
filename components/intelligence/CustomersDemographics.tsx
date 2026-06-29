@@ -1,11 +1,13 @@
 // CustomersDemographics — Screen 11 (Customer Intelligence). Inferred audience
-// demographics (age / gender bands) for one selected competitor, as labelled
-// horizontal bars. Customer Intelligence is a PARTIAL module (mvp-constraints
-// §2): only inferred demographics ship. When no demographic inference exists for
-// any competitor this week, the whole sub-section renders the Phase-2 EmptyState
+// demographics (age / gender bands) per competitor, as labelled horizontal
+// bars. Customer Intelligence is a PARTIAL module (mvp-constraints §2): only
+// inferred demographics ship. When no demographic inference exists for any
+// competitor this week, the whole sub-section renders the Phase-2 EmptyState
 // (full demographic + social-audience depth needs social intelligence) — never
-// fabricated bars. Bars use the neutral grey ramp (these are competitors, not
-// the own brand; cobalt is reserved and never decorative, ui-constraints §2.2).
+// fabricated bars. Competitor bars use the neutral grey ramp; the own brand
+// (competitorId === ownBrandId) is the single cobalt marker (ui-constraints
+// §2.2): cobalt name + "You" chip + faint cobalt tint + cobalt bars. Cobalt is
+// reserved for the own brand and never decorative.
 // Presentational; data from SSR props. Tokens only.
 
 import type {
@@ -17,13 +19,18 @@ import { TierBadge } from "@/components/intelligence/TierBadge";
 
 // Neutral grey ramp (mirrors the SOV donut / traffic chart convention).
 const GREY_RAMP = ["#6B6B78", "#8A8A96", "#9999A8", "#B4B4BE", "#CBCBD2"];
+// Own-brand cobalt bar (ui-constraints §2.2). Single hex permitted here for the
+// same reason the grey ramp is — inline style needs a colour string.
+const COBALT = "#2B5CE6";
 
 function BandBars({
   title,
   bands,
+  isOwnBrand,
 }: {
   title: string;
   bands: DemographicBand[];
+  isOwnBrand: boolean;
 }) {
   if (bands.length === 0) return null;
   const max = Math.max(...bands.map((b) => b.pct), 1);
@@ -39,7 +46,9 @@ function BandBars({
                 className="absolute inset-y-0 left-0 rounded-full"
                 style={{
                   width: `${Math.max((b.pct / max) * 100, 2)}%`,
-                  backgroundColor: GREY_RAMP[Math.min(i, GREY_RAMP.length - 1)],
+                  backgroundColor: isOwnBrand
+                    ? COBALT
+                    : GREY_RAMP[Math.min(i, GREY_RAMP.length - 1)],
                 }}
                 aria-hidden
               />
@@ -54,18 +63,40 @@ function BandBars({
   );
 }
 
-function CompetitorDemographics({ c }: { c: CompetitorCustomerIntel }) {
+function CompetitorDemographics({
+  c,
+  isOwnBrand,
+}: {
+  c: CompetitorCustomerIntel;
+  isOwnBrand: boolean;
+}) {
   // Guarded by the parent: only competitors with demographics reach here.
   const demo = c.demographics!;
   return (
-    <div className="rounded-card bg-card p-4 shadow-sh1">
+    <div
+      className={`rounded-card p-4 shadow-sh1 ${
+        isOwnBrand ? "bg-cobalt/5" : "bg-card"
+      }`}
+    >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-ink">{c.name}</span>
-        <TierBadge tier={c.tier} />
+        <span
+          className={
+            isOwnBrand ? "font-semibold text-cobalt" : "font-medium text-ink"
+          }
+        >
+          {c.name}
+        </span>
+        {isOwnBrand ? (
+          <span className="rounded-chip bg-cobalt/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-cobalt">
+            You
+          </span>
+        ) : (
+          <TierBadge tier={c.tier} />
+        )}
       </div>
       <div className="mt-3 space-y-4">
-        <BandBars title="Age" bands={demo.ageBands} />
-        <BandBars title="Gender" bands={demo.gender} />
+        <BandBars title="Age" bands={demo.ageBands} isOwnBrand={isOwnBrand} />
+        <BandBars title="Gender" bands={demo.gender} isOwnBrand={isOwnBrand} />
       </div>
     </div>
   );
@@ -73,8 +104,11 @@ function CompetitorDemographics({ c }: { c: CompetitorCustomerIntel }) {
 
 export function CustomersDemographics({
   competitors,
+  ownBrandId,
 }: {
   competitors: CompetitorCustomerIntel[];
+  /** The brand's own competitorId — that card is the cobalt own-brand marker. */
+  ownBrandId?: string;
 }) {
   const withDemographics = competitors.filter((c) => c.demographics !== null);
 
@@ -92,7 +126,11 @@ export function CustomersDemographics({
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {withDemographics.map((c) => (
-        <CompetitorDemographics key={c.competitorId} c={c} />
+        <CompetitorDemographics
+          key={c.competitorId}
+          c={c}
+          isOwnBrand={c.competitorId === ownBrandId}
+        />
       ))}
     </div>
   );

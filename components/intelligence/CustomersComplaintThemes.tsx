@@ -5,6 +5,9 @@
 // neutral grey otherwise). Green is reserved for genuinely positive states only
 // (ui-constraints §2.3/§15) — complaint themes are negative by nature, so the
 // brightest a chip gets is neutral; we never colour a complaint green.
+// The own brand (competitorId === ownBrandId) is the single cobalt marker
+// (ui-constraints §2.2): cobalt name + "You" chip + a faint cobalt row tint;
+// competitors stay neutral with their TierBadge.
 // Presentational; data from SSR props. Tokens only (no hex).
 
 import type { CompetitorCustomerIntel } from "@/lib/data/customers";
@@ -19,12 +22,34 @@ function themeTint(sentiment: number | null): string {
   return "bg-base-secondary text-ink-secondary";
 }
 
-function CompetitorThemes({ c }: { c: CompetitorCustomerIntel }) {
+function CompetitorThemes({
+  c,
+  isOwnBrand,
+}: {
+  c: CompetitorCustomerIntel;
+  isOwnBrand: boolean;
+}) {
   return (
-    <div className="rounded-card bg-card p-4 shadow-sh1">
+    <div
+      className={`rounded-card p-4 shadow-sh1 ${
+        isOwnBrand ? "bg-cobalt/5" : "bg-card"
+      }`}
+    >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-ink">{c.name}</span>
-        <TierBadge tier={c.tier} />
+        <span
+          className={
+            isOwnBrand ? "font-semibold text-cobalt" : "font-medium text-ink"
+          }
+        >
+          {c.name}
+        </span>
+        {isOwnBrand ? (
+          <span className="rounded-chip bg-cobalt/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-cobalt">
+            You
+          </span>
+        ) : (
+          <TierBadge tier={c.tier} />
+        )}
         {c.appReviewCount != null && (
           <span className="font-mono text-[11px] text-ink-faint">
             {c.appReviewCount.toLocaleString()} reviews
@@ -57,8 +82,11 @@ function CompetitorThemes({ c }: { c: CompetitorCustomerIntel }) {
 
 export function CustomersComplaintThemes({
   competitors,
+  ownBrandId,
 }: {
   competitors: CompetitorCustomerIntel[];
+  /** The brand's own competitorId — that row is the cobalt own-brand marker. */
+  ownBrandId?: string;
 }) {
   const withThemes = competitors.filter((c) => c.complaintThemes.length > 0);
 
@@ -73,7 +101,11 @@ export function CustomersComplaintThemes({
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {withThemes.map((c) => (
-        <CompetitorThemes key={c.competitorId} c={c} />
+        <CompetitorThemes
+          key={c.competitorId}
+          c={c}
+          isOwnBrand={c.competitorId === ownBrandId}
+        />
       ))}
     </div>
   );
