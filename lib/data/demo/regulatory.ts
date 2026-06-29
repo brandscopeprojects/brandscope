@@ -36,7 +36,7 @@ export const DEMO_REGULATORY: RegulatoryData = {
     {
       competitorId: "demo-comp-sportybet",
       name: "SportyBet",
-      tier: "direct",
+      tier: "dominant",
       market: "nigeria",
       score: 92,
       isOwnBrand: false,
@@ -52,7 +52,7 @@ export const DEMO_REGULATORY: RegulatoryData = {
     {
       competitorId: "demo-comp-betking",
       name: "BetKing",
-      tier: "direct",
+      tier: "dominant",
       market: "nigeria",
       score: 78,
       isOwnBrand: false,
@@ -68,7 +68,7 @@ export const DEMO_REGULATORY: RegulatoryData = {
     {
       competitorId: "demo-comp-1xbet",
       name: "1xBet",
-      tier: "direct",
+      tier: "challenger",
       market: "nigeria",
       score: 65,
       isOwnBrand: false,
@@ -84,7 +84,7 @@ export const DEMO_REGULATORY: RegulatoryData = {
     {
       competitorId: "demo-comp-nairabet",
       name: "NairaBet",
-      tier: "secondary",
+      tier: "mid_market",
       market: "nigeria",
       score: 48,
       isOwnBrand: false,

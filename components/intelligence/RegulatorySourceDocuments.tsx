@@ -50,7 +50,12 @@ export function RegulatorySourceDocuments({
                 </div>
                 <p className="text-xs text-ink-secondary">
                   {doc.regulatoryBody} · {doc.country}
-                  {doc.version ? ` · v${doc.version}` : ""}
+                  {doc.version && (
+                    <>
+                      {" · "}
+                      <span className="font-mono text-ink-faint">v{doc.version}</span>
+                    </>
+                  )}
                 </p>
                 {verified && (
                   <p className="font-mono text-[11px] text-ink-faint">

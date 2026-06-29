@@ -71,7 +71,7 @@ export function RegulatoryComplianceMatrix({ rows }: { rows: ComplianceRow[] }) 
         <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr className="bg-base-secondary">
-              <th className="sticky left-0 z-10 bg-base-secondary px-4 py-2.5 text-left text-xs font-medium text-ink-secondary">
+              <th className="sticky left-0 z-10 w-[148px] min-w-[148px] bg-base-secondary px-4 py-2.5 text-left text-xs font-medium text-ink-secondary">
                 Brand
               </th>
               {REGULATORY_DIMENSIONS.map((d) => (
@@ -101,17 +101,17 @@ export function RegulatoryComplianceMatrix({ rows }: { rows: ComplianceRow[] }) 
                   <th
                     scope="row"
                     className={[
-                      "sticky left-0 z-10 px-4 py-3 text-left",
+                      "sticky left-0 z-10 w-[148px] min-w-[148px] px-4 py-3 text-left",
                       // Opaque card base so the sticky cell covers scrolled content;
                       // the cobalt tint sits on top for the own-brand row.
                       "bg-card",
                       highlighted ? "before:absolute before:inset-0 before:bg-cobalt/5" : "",
                     ].join(" ")}
                   >
-                    <span className="relative z-10 flex items-center gap-2">
+                    <span className="relative z-10 flex min-w-0 flex-col items-start gap-1">
                       <span
                         className={[
-                          "truncate text-sm",
+                          "max-w-full truncate text-sm",
                           highlighted
                             ? "font-semibold text-cobalt"
                             : "font-medium text-ink",
