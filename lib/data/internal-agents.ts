@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { Database } from "@/types/database.types";
 import type { StatusTone } from "@/components/intelligence/StatusPill";
 
@@ -155,6 +156,13 @@ function jobStatusTone(status: string): StatusTone {
  */
 export const getAgentControlData = cache(
   async function getAgentControlData(): Promise<AgentControlData> {
+    if (isDemoMode()) {
+      const { DEMO_INTERNAL_AGENTS } = await import(
+        "@/lib/data/demo/internal-agents"
+      );
+      return DEMO_INTERNAL_AGENTS;
+    }
+
     const supabase = createAdminClient();
 
     const [
