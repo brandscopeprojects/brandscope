@@ -7,6 +7,7 @@ import "server-only";
 
 import { getBrandCompetitors, type BrandCompetitor } from "@/lib/data/competitors";
 import { COMPETITOR_MAX } from "@/lib/onboarding/constants";
+import { isDemoMode } from "@/lib/data/demo-mode";
 
 export type AdminCompetitorsData = {
   competitors: BrandCompetitor[];
@@ -24,6 +25,10 @@ export type AdminCompetitorsData = {
 export async function getAdminCompetitors(
   brandId: string,
 ): Promise<AdminCompetitorsData> {
+  if (isDemoMode()) {
+    const { DEMO_ADMIN_COMPETITORS } = await import("@/lib/data/demo/admin-competitors");
+    return DEMO_ADMIN_COMPETITORS;
+  }
   const competitors = await getBrandCompetitors(brandId);
   const count = competitors.length;
   const remaining = Math.max(0, COMPETITOR_MAX - count);
