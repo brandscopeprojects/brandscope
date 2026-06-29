@@ -20,6 +20,8 @@ const COLUMNS: Column<CronJobVM>[] = [
     key: "notes",
     header: "Notes",
     cell: (r) => <span className="text-ink-secondary">{r.notes}</span>,
+    // Error / run-detail prose — allow wrap so it reads, per DataTable §12.
+    wrap: true,
   },
 ];
 

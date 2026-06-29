@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { StatusTone } from "@/components/intelligence/StatusPill";
 
 /**
@@ -168,6 +169,13 @@ const BAD_TONES: ReadonlySet<StatusTone> = new Set<StatusTone>(["bad"]);
  * decides between the empty state and the populated tables.
  */
 export async function getInternalHealth(): Promise<InternalHealthData> {
+  // Demo short-circuit: serve the RiversBet sample console instead of querying
+  // Supabase (paired with the public /preview/internal-health route).
+  if (isDemoMode()) {
+    const { DEMO_INTERNAL_HEALTH } = await import("@/lib/data/demo/internal-health");
+    return DEMO_INTERNAL_HEALTH;
+  }
+
   const supabase = createAdminClient();
 
   const [systemRes, featureRes, cronRes, apiRes] = await Promise.all([

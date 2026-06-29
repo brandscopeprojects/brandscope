@@ -29,6 +29,8 @@ const COLUMNS: Column<FeatureHealthVM>[] = [
     key: "notes",
     header: "Notes",
     cell: (r) => <span className="text-ink-secondary">{r.notes}</span>,
+    // Root-cause / resolution prose — allow wrap so it reads, per DataTable §12.
+    wrap: true,
   },
 ];
 
