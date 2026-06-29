@@ -1,10 +1,16 @@
 import Link from "next/link";
 
-// Index of design previews (populated with sample data). Public; review-only.
+// Index of design previews (populated with the RiversBet sample data). Public.
 const PREVIEWS = [
   { href: "/preview/dashboard", label: "Dashboard" },
-  { href: "/preview/action-plan", label: "Action Plan" },
+  { href: "/preview/market-intel", label: "Market Intelligence" },
+  { href: "/preview/promotions", label: "Promotion Signals" },
+  { href: "/preview/competitors", label: "Competitor Profile (SportyBet)" },
+  { href: "/preview/social-ads", label: "Social & Ads" },
+  { href: "/preview/regulatory", label: "Regulatory Compliance" },
+  { href: "/preview/customers", label: "Customer Intelligence" },
   { href: "/preview/geo-aeo-seo", label: "GEO / AEO / SEO Visibility" },
+  { href: "/preview/action-plan", label: "Action Plan" },
 ];
 
 export default function PreviewIndex() {

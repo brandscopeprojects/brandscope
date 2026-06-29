@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
 import {
   getBrandCompetitors,
@@ -158,6 +159,11 @@ function toTrafficSource(raw: unknown): TrafficSource | null {
 export async function getCustomerIntelData(
   brand: BrandSummary,
 ): Promise<CustomerIntelData | null> {
+  if (isDemoMode()) {
+    const { DEMO_CUSTOMERS } = await import("@/lib/data/demo/customers");
+    return DEMO_CUSTOMERS;
+  }
+
   const supabase = createClient();
 
   const { data: rows } = await supabase
