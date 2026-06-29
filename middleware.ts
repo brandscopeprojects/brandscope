@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { updateSession } from "@/lib/supabase/middleware";
+import type { Database } from "@/types/database.types";
 
 // Route protection (data-flow-rules: brand reads SSR + RLS; admin areas role-gated).
 const PUBLIC_PREFIXES = ["/login", "/auth", "/unauthorized"];
@@ -14,7 +15,7 @@ function isPublic(pathname: string): boolean {
 // profiles is service-role-only (RLS enabled, no policy) — the user's own client
 // cannot read it, so role lookup uses the service role. Only runs for admin areas.
 async function getUserRole(userId: string): Promise<string | null> {
-  const admin = createServiceClient(
+  const admin = createServiceClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } },
