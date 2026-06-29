@@ -2,70 +2,32 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { demoSignIn } from "./actions";
 
-// Minimal email/password auth. Two modes:
-//  - sign in  → routes to ?next or /dashboard
-//  - sign up  → supabase.auth.signUp, then routes new users to /onboarding
-// NOTE: whether sign-up returns an active session immediately (vs requiring email
-// confirmation) depends on the Supabase Auth dashboard settings — not yet
-// configured by the human. If confirmation is ON, signUp yields no session and the
-// user must confirm before /onboarding loads (middleware will bounce to /login).
-// Design polish is a later step; tokens are respected here.
-
+// TEMPORARY DEMO ACCESS.
+// Email confirmation is bypassed: enter any email + the shared access password to
+// get straight in (account auto-created, pre-confirmed). New users are routed to
+// onboarding to set up their brand. See app/login/actions.ts to revert.
 export function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    setNotice(null);
-    const supabase = createClient();
 
-    if (mode === "signup") {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        // Send the confirmation link back to THIS origin's unified /auth/confirm
-        // route (handles both token-hash and PKCE), landing new users on
-        // onboarding. Uses the live origin so it works on prod or localhost. The
-        // URL must also be allow-listed in Supabase → Auth → URL Configuration.
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/confirm?next=/onboarding`,
-        },
-      });
-      if (error) {
-        setError(error.message);
-        setLoading(false);
-        return;
-      }
-      // If email confirmation is OFF, a session exists now → straight to onboarding.
-      // If it's ON, there is no session yet; tell the user to confirm first.
-      if (data.session) {
-        router.replace("/onboarding");
-        router.refresh();
-        return;
-      }
-      setNotice("Check your email to confirm your account, then sign in.");
-      setMode("signin");
+    const result = await demoSignIn(email, password);
+    if (!result.ok) {
+      setError(result.error);
       setLoading(false);
       return;
     }
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
-    }
+    // Land in-app; the (app) layout routes to /onboarding when no brand exists yet.
     const next = params.get("next") || "/dashboard";
     router.replace(next);
     router.refresh();
@@ -81,6 +43,7 @@ export function LoginForm() {
           id="email"
           type="email"
           required
+          autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="rounded-chip border border-divider bg-card px-3 py-2 text-ink outline-none focus:border-cobalt"
@@ -88,45 +51,27 @@ export function LoginForm() {
       </div>
       <div className="flex flex-col gap-1">
         <label htmlFor="password" className="text-sm text-ink-secondary">
-          Password
+          Access password
         </label>
         <input
           id="password"
           type="password"
           required
-          minLength={6}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="rounded-chip border border-divider bg-card px-3 py-2 text-ink outline-none focus:border-cobalt"
         />
+        <p className="text-xs text-ink-faint">
+          Demo access — use the shared access password to sign in.
+        </p>
       </div>
       {error && <p className="text-sm text-urgent">{error}</p>}
-      {notice && <p className="text-sm text-opportunity">{notice}</p>}
       <button
         type="submit"
         disabled={loading}
         className="rounded-chip bg-cobalt px-3 py-2 font-medium text-white shadow-sh1 disabled:opacity-60"
       >
-        {loading
-          ? mode === "signup"
-            ? "Creating account…"
-            : "Signing in…"
-          : mode === "signup"
-            ? "Create account"
-            : "Sign in"}
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          setMode((m) => (m === "signin" ? "signup" : "signin"));
-          setError(null);
-          setNotice(null);
-        }}
-        className="text-sm text-cobalt hover:underline"
-      >
-        {mode === "signin"
-          ? "New to Brandscope? Create an account"
-          : "Already have an account? Sign in"}
+        {loading ? "Signing in…" : "Enter Brandscope"}
       </button>
     </form>
   );
