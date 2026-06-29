@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile } from "@/lib/auth";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { StatusTone } from "@/components/intelligence/StatusPill";
 
 /**
@@ -174,6 +175,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * state and the populated tables.
  */
 export async function getInternalSecurity(): Promise<InternalSecurityData | null> {
+  // Demo short-circuit FIRST — populates the preview/demo before any role gate,
+  // so the design preview renders the full data-dense surface without auth.
+  if (isDemoMode()) {
+    const { DEMO_INTERNAL_SECURITY } = await import("@/lib/data/demo/internal-security");
+    return DEMO_INTERNAL_SECURITY;
+  }
+
   // Defense-in-depth: the page gates super_admin, we re-check here too.
   const profile = await getCurrentProfile();
   if (profile?.role !== "super_admin") return null;
