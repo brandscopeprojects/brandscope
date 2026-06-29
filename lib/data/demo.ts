@@ -3,6 +3,8 @@
 // real components are visible instead of an empty state. Clearly sample data.
 
 import type { DashboardData } from "@/lib/data/dashboard";
+import type { ActionPlanData } from "@/lib/data/action-plan";
+import type { GeoData } from "@/lib/data/geo";
 import type { Recommendation } from "@/types/view-models";
 
 export const DEMO_BRAND = {
@@ -131,4 +133,75 @@ export const DEMO_DASHBOARD: DashboardData = {
   },
   aiVisibility: { score: 68, trend: 12 },
   recommendations: RECS,
+};
+
+// A completed action with a logged real-world outcome (Action Plan mockup #4).
+const COMPLETED_REC: Recommendation = {
+  id: "demo-rec-4",
+  urgency: "opportunity",
+  category: "social_ads",
+  headline: "Launched Instagram deposit-bonus ad campaign",
+  triggerReason: "Closed the engagement gap on Instagram vs BetKing and SportyBet.",
+  confidenceScore: 0.78,
+  confidenceLevel: "high",
+  evidence: [
+    {
+      sourceUrl: "https://instagram.com/riversbet",
+      scrapedAt: "2025-05-12T09:00:00Z",
+      extractedText: "Deposit-bonus creative set live across Instagram feed + stories.",
+      changeBefore: null,
+      changeAfter: null,
+      evidenceHash: "b3c4d5e6",
+    },
+  ],
+  assumptionFlags: [],
+  isDirectEvidence: true,
+  status: "completed",
+  rank: 4,
+};
+
+export const DEMO_ACTION_PLAN: ActionPlanData = {
+  scanWeek: "2025-05-12",
+  summary: { totalRecommendations: 4, urgentCount: 1, watchCount: 1, opportunityCount: 2 },
+  recommendations: [...RECS, COMPLETED_REC],
+  outcomesByRecId: {
+    "demo-rec-4": {
+      id: "demo-outcome-1",
+      recommendationId: "demo-rec-4",
+      actionTaken: "Launched Instagram deposit-bonus ad campaign",
+      outcomeMetric: "Click-through rate",
+      outcomeValue: 2.4,
+      outcomeUnit: "%",
+      result: "positive",
+      notes: "CTR 2.4% (+31%), 1,240 new depositors (+28%) in the first week.",
+      loggedAt: "2025-05-18T16:00:00Z",
+    },
+  },
+};
+
+// GEO / AEO / SEO Visibility (mockup #5) — 4 AI engines, score 68.
+export const DEMO_GEO: GeoData = {
+  scanWeek: "2025-05-12",
+  score: 68,
+  scoreChangeWow: 12,
+  platforms: [
+    { name: "ChatGPT", mentioned: true, position: 3, sentiment: "positive", checkedAt: "2025-05-18T03:00:00Z", responseSample: "RiversBet is listed among reputable Nigerian betting platforms." },
+    { name: "Claude", mentioned: true, position: 4, sentiment: "neutral", checkedAt: "2025-05-18T03:00:00Z", responseSample: "RiversBet appears alongside several established operators." },
+    { name: "Gemini", mentioned: false, position: null, sentiment: null, checkedAt: "2025-05-18T03:00:00Z", responseSample: null },
+    { name: "Perplexity", mentioned: true, position: 2, sentiment: "positive", checkedAt: "2025-05-18T03:00:00Z", responseSample: "RiversBet is cited as a fast-payout option." },
+  ],
+  competitorScores: [
+    { competitorName: "1xBet", score: 82 },
+    { competitorName: "SportyBet", score: 75 },
+    { competitorName: "BetKing", score: 70 },
+    { competitorName: "Betway", score: 55 },
+    { competitorName: "NairaBet", score: 42 },
+  ],
+  topMentions: [
+    { platform: "ChatGPT", url: "https://chat.openai.com/", snippet: "“best betting sites in Nigeria” — RiversBet at position 3/10." },
+    { platform: "Perplexity", url: "https://perplexity.ai/", snippet: "“reliable betting apps” — RiversBet at position 2/10." },
+  ],
+  featuredSnippets: [
+    { query: "fastest payout betting sites nigeria", url: "https://google.com/search?q=fastest+payout+betting+sites+nigeria", snippet: "Not currently held by RiversBet — opportunity to target." },
+  ],
 };
