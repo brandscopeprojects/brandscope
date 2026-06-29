@@ -8,13 +8,17 @@
 import { StatusPill, type StatusTone } from "@/components/intelligence/StatusPill";
 import type { MarketChange } from "@/lib/data/market-intel";
 
+// Impact label → status tint (ui-constraints §2.3, §12): high reads as urgent
+// (red), medium as watch (amber), low as neutral grey. An "opportunity"-type
+// move is a positive opening, so it tints opportunity-green regardless of level.
 const IMPACT_TONE: Record<string, StatusTone> = {
   high: "bad",
   medium: "warn",
   low: "neutral",
 };
 
-function impactTone(impact: string | null): StatusTone {
+function impactTone(impact: string | null, changeType: string): StatusTone {
+  if (changeType.toLowerCase() === "opportunity") return "good";
   if (!impact) return "neutral";
   return IMPACT_TONE[impact.toLowerCase()] ?? "neutral";
 }
@@ -53,20 +57,26 @@ export function MarketTrendFeed({ changes }: { changes: MarketChange[] }) {
           key={c.id}
           className="rounded-card bg-card p-4 shadow-sh1"
         >
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-ink">
-              {c.competitorName}
-            </span>
-            <span className="inline-flex items-center rounded-chip bg-base-secondary px-2 py-0.5 font-mono text-[11px] font-medium tracking-wide text-ink-secondary">
-              {changeTypeLabel(c.changeType)}
-            </span>
-            {c.impactLevel && (
-              <StatusPill
-                label={`${c.impactLevel.toUpperCase()} IMPACT`}
-                tone={impactTone(c.impactLevel)}
-              />
-            )}
-            <span className="ml-auto font-mono text-xs text-ink-faint">
+          {/* Meta row: name + tags on the left, scrape timestamp on the right.
+              On narrow widths (≤sm) the row stacks so the mono timestamp wraps
+              BELOW the title/tags instead of colliding with them. */}
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-ink">
+                {c.competitorName}
+              </span>
+              {/* Category tag: neutral grey, Inter (§8.1 — taxonomy, not mono evidence). */}
+              <span className="inline-flex items-center rounded-chip bg-base-secondary px-2 py-0.5 text-[11px] font-medium tracking-wide text-ink-secondary">
+                {changeTypeLabel(c.changeType)}
+              </span>
+              {c.impactLevel && (
+                <StatusPill
+                  label={`${c.impactLevel.toUpperCase()} IMPACT`}
+                  tone={impactTone(c.impactLevel, c.changeType)}
+                />
+              )}
+            </div>
+            <span className="font-mono text-xs text-ink-faint sm:shrink-0">
               {formatDetectedAt(c.detectedAt)}
             </span>
           </div>
