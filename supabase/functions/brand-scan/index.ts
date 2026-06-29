@@ -51,12 +51,34 @@ Deno.serve(async (req) => {
     // 1b. Load the brand.
     const { data: brand, error: brandError } = await sb
       .from("brands")
-      .select("id, name, domain, market")
+      .select("id, name, domain, market, tier, industry")
       .eq("id", brandId)
       .single();
     if (brandError || !brand) {
       throw new Error(`load brand: ${brandError?.message ?? "missing"}`);
     }
+
+    // 1b-self. Ensure a self-competitor row exists for the brand's OWN domain so the
+    // per-competitor module caches (seo/promotions/tech/customer…) can carry the
+    // brand's own data — the dashboard's own-brand reach/SOV/threat read from it.
+    // The self row is a shared `competitors` record keyed by domain; it is
+    // DELIBERATELY NOT linked via brand_competitors, so it never appears in the
+    // brand's competitor list (getBrandCompetitors) or as a grey rival dot.
+    // cache-population resolves it by a direct domain match.
+    const { data: selfComp } = await sb
+      .from("competitors")
+      .upsert(
+        {
+          domain: brand.domain,
+          name: brand.name,
+          tier: brand.tier,
+          industry: brand.industry,
+          primary_market: brand.market?.[0] ?? null,
+        },
+        { onConflict: "domain" },
+      )
+      .select("id, name, domain, tier")
+      .single();
 
     // 1c. Load brand preferences (gates which modules run).
     const { data: prefs } = await sb
@@ -87,6 +109,15 @@ Deno.serve(async (req) => {
           return { id: c.id, name: c.name, domain: c.domain, tier: c.tier } satisfies CompetitorRef;
         })
         .filter((c): c is CompetitorRef => c !== null);
+    }
+
+    // Prepend the brand's self-competitor so researchers scan the brand's OWN
+    // domain too (deduped — skip if a tracked competitor already shares the id).
+    if (selfComp && !competitors.some((c) => c.id === selfComp.id)) {
+      competitors = [
+        { id: selfComp.id, name: selfComp.name, domain: selfComp.domain, tier: selfComp.tier },
+        ...competitors,
+      ];
     }
 
     // 2. Compute enabled modules; record expected fan-out + transition to running.

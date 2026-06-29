@@ -83,3 +83,6 @@ No LLM call may proceed without a corresponding log row. Langfuse trace sent in 
 
 ## Isolation reminder
 Agents run with the **service role → RLS is bypassed**. Isolation is enforced in code: every query is scoped to the single `brand_id` on the queue message. Never batch across brands in one agent invocation.
+
+## Brand-self convention (own-brand scanning)
+Per-competitor module caches (`seo_cache`, `promotions_cache`, `tech_stack_cache`, `customer_intel_cache`, `product_intel_cache`, `hiring_signals_cache`, `regulatory_cache`) are keyed by `competitor_id`. To also scan the brand's OWN domain (so the dashboard's own-brand reach/SOV/threat/radar populate), `brand-scan` upserts a **self-competitor** row in `competitors` keyed by the brand's domain and **prepends it to the scan's `competitors[]`** — but it is **NOT linked in `brand_competitors`**, so it never appears in the brand's competitor list (`getBrandCompetitors`) or as a grey rival dot. `cache-population` resolves the self row by a **direct domain match** against `competitors` (not via the tracked list), reads the brand's own module rows from it, and excludes it from `competitor_states`/rivals. `geo_cache` is the exception — own AI visibility is brand-keyed directly. Absent self data → own-brand scores stay null (no fabrication).

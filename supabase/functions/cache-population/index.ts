@@ -136,15 +136,28 @@ Deno.serve(async (req) => {
       .filter((c): c is CompetitorRow => c != null);
     const competitorIds = competitors.map((c) => c.id);
 
-    // Brand-self competitor (module caches key the brand's OWN row by a competitor
-    // whose domain == the brand's). May be absent → own-brand module scores null.
-    const selfCompetitor = competitors.find((c) => c.domain === brand.domain) ?? null;
-    // If the self-competitor is also a tracked rival entry, don't double-count it as a rival.
+    // Brand-self competitor: resolved by a DIRECT domain match against `competitors`
+    // (brand-scan seeds this self row but does NOT link it in brand_competitors, so
+    // it isn't in the tracked list above). Its per-competitor module rows carry the
+    // brand's OWN data. Absent → own-brand module scores null (no fabrication).
+    const { data: selfRow } = await sb
+      .from("competitors")
+      .select("id, name, domain")
+      .eq("domain", brand.domain)
+      .limit(1)
+      .maybeSingle();
+    const selfCompetitor: CompetitorRow | null = selfRow
+      ? { id: String(selfRow.id), name: String(selfRow.name), domain: String(selfRow.domain) }
+      : null;
+    // Rivals = tracked competitors, excluding the self row if it also happens to be tracked.
     const rivals = selfCompetitor
       ? competitors.filter((c) => c.id !== selfCompetitor.id)
       : competitors;
 
-    const md = await loadModuleData(sb, brand_id, scan_week, competitorIds);
+    // tech_stack_cache is keyed by competitor_id only — include the self id so the
+    // brand's own tech row loads alongside the rivals'.
+    const loadIds = selfCompetitor ? [...competitorIds, selfCompetitor.id] : competitorIds;
+    const md = await loadModuleData(sb, brand_id, scan_week, loadIds);
 
     const failedModules: string[] = job.failed_modules ?? [];
     const partialModules: string[] = job.partial_modules ?? [];
