@@ -8,6 +8,7 @@ import {
   type BrandCompetitor,
 } from "@/lib/data/competitors";
 import { marketLabel } from "@/lib/format";
+import { isDemoMode } from "@/lib/data/demo-mode";
 import type { Json } from "@/types/database.types";
 
 // Regulatory Compliance data layer (Screen 12, /regulatory).
@@ -173,6 +174,11 @@ function countryMatchesMarkets(country: string, markets: string[]): boolean {
  *  source docs for the brand's markets, mapped to view models. Returns null when
  *  no regulatory_cache rows exist yet (pre-first-scan empty state). */
 export async function getRegulatoryData(): Promise<RegulatoryData | null> {
+  if (isDemoMode()) {
+    const { DEMO_REGULATORY } = await import("@/lib/data/demo/regulatory");
+    return DEMO_REGULATORY;
+  }
+
   const brand = await getCurrentBrand();
   if (!brand) return null;
 
