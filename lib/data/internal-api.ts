@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isDemoMode } from "@/lib/data/demo-mode";
 
 // API Management data layer (Internal admin, Screen 26, /brandscope-admin/api-management).
 // Sources (both Class-2, service-role-only, GLOBAL — rls-policies.md):
@@ -81,6 +82,11 @@ function circuitState(tone: ApiHealthView["tone"], errorRate24h: number | null):
  * Both arrays may be empty (pre-telemetry) — the page renders an empty state then.
  */
 export async function getInternalApiData(): Promise<InternalApiData> {
+  if (isDemoMode()) {
+    const { DEMO_INTERNAL_API } = await import("@/lib/data/demo/internal-api");
+    return DEMO_INTERNAL_API;
+  }
+
   const admin = createAdminClient();
 
   const [healthRes, routerRes] = await Promise.all([

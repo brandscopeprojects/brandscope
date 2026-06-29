@@ -1,5 +1,6 @@
 // ApiMgmtRouterTable — model_router_config as a DataTable: task / use-case →
-// primary model (mono) → fallback model (mono) → limits → enabled (StatusPill).
+// primary model (mono) → fallback model (mono) → limits → per-row breaker
+// threshold (mono) → enabled (StatusPill).
 // Internal admin data-dense surface (ui-constraints §11.3). Presentational. Tokens only.
 
 import { DataTable, type Column } from "@/components/intelligence/DataTable";
@@ -43,6 +44,16 @@ const COLUMNS: Column<RouterRuleView>[] = [
     mono: true,
     cell: (r) =>
       r.maxTokens != null ? r.maxTokens.toLocaleString("en-GB") : "—",
+  },
+  {
+    key: "breaker",
+    header: "Breaker @",
+    align: "right",
+    mono: true,
+    cell: (r) =>
+      r.circuitBreakerThresholdPct != null
+        ? `${r.circuitBreakerThresholdPct}%`
+        : "—",
   },
   {
     key: "enabled",
