@@ -47,7 +47,24 @@ export async function logAgentJob(sb: SupabaseClient, entry: AgentJobLog): Promi
   }
 }
 
-/** Record a feature's health for a scan (status: 'healthy'|'degraded'|'down'|'not_applicable_mvp'). */
+// feature_health_logs.status CHECK = ('passed','partial','failed','not_applicable_mvp').
+// Normalise the synonyms callers use (healthy/degraded/down/…) so the insert never
+// violates the constraint regardless of which vocabulary a function passed.
+const FEATURE_STATUS: Record<string, string> = {
+  passed: "passed",
+  healthy: "passed",
+  ok: "passed",
+  partial: "partial",
+  degraded: "partial",
+  failed: "failed",
+  down: "failed",
+  error: "failed",
+  unavailable: "failed",
+  not_applicable_mvp: "not_applicable_mvp",
+  na: "not_applicable_mvp",
+};
+
+/** Record a feature's health for a scan. Status is normalised to the CHECK set. */
 export async function recordFeatureHealth(
   sb: SupabaseClient,
   params: {
