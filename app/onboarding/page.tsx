@@ -9,7 +9,16 @@ import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 
 export const dynamic = "force-dynamic";
 
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams?: { domain?: string };
+}) {
+  // Domain handed over from the homepage hero form ("scan my market").
+  const initialDomain = (searchParams?.domain ?? "")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .slice(0, 253);
   const user = await requireUser();
 
   // Look up any brand this user already owns (org membership → brand).
@@ -39,7 +48,7 @@ export default async function OnboardingPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-10 bg-base px-4 py-12">
       <h1 className="font-display text-3xl font-bold text-ink">Brandscope</h1>
-      <OnboardingWizard />
+      <OnboardingWizard initialDomain={initialDomain} />
     </main>
   );
 }

@@ -35,14 +35,14 @@ function blankRow(): CompetitorEntry {
   };
 }
 
-export function OnboardingWizard() {
+export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: string }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   // Step 1 — brand
-  const [brandDomain, setBrandDomain] = useState("");
+  const [brandDomain, setBrandDomain] = useState(initialDomain);
   const [brandName, setBrandName] = useState("");
   const [brandDetecting, setBrandDetecting] = useState(false);
 

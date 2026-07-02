@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DashboardView } from "@/components/dashboard/DashboardView";
 import { ShowcaseActionCard } from "@/components/marketing/ShowcaseActionCard";
+import { HeroScanForm } from "@/components/marketing/HeroScanForm";
 import { DEMO_BRAND, DEMO_DASHBOARD, DEMO_GEO } from "@/lib/data/demo";
 
 // Marketing homepage — calm, spacious, one idea per screen. Every visual is the
@@ -58,20 +59,15 @@ export default function Home() {
       {/* ── Hero ────────────────────────────────────────────── */}
       <section className="mx-auto max-w-5xl px-6 pt-20 text-center md:pt-28">
         <Kicker>Competitive intelligence for iGaming · NG · KE · ZA</Kicker>
-        <h1 className="mx-auto mt-6 max-w-4xl font-display text-5xl font-bold leading-[1.05] tracking-tight text-ink md:text-7xl">
+        <h1 className="mx-auto mt-7 max-w-4xl font-display text-[3.4rem] font-bold leading-[0.98] tracking-tight text-ink md:text-8xl">
           Know what your competitors did <span className="text-cobalt">this week.</span>
         </h1>
-        <p className="mx-auto mt-8 max-w-xl text-lg leading-relaxed text-ink-secondary">
+        <p className="mx-auto mt-9 max-w-xl text-lg leading-relaxed text-ink-secondary">
           Every Monday, Brandscope scans your market and hands you a ranked,
           evidence-backed action plan — with the marketing assets already written.
         </p>
         <div className="mt-10">
-          <Link
-            href="/login"
-            className="inline-block rounded-chip bg-cobalt px-8 py-3.5 text-sm font-semibold text-white shadow-sh1 transition-shadow hover:shadow-sh2"
-          >
-            Start your first scan
-          </Link>
+          <HeroScanForm />
           <p className="mt-5 text-sm text-ink-faint">
             First scan takes 2–3 minutes ·{" "}
             <Link href="/preview/dashboard" className="text-ink-secondary underline-offset-4 transition-colors hover:text-ink hover:underline">
@@ -121,18 +117,18 @@ export default function Home() {
           Brandscope watches your competitors' promotions, rankings, AI visibility
           and compliance — then writes the week's plan before you're at your desk.
         </p>
-        <div className="mx-auto mt-16 grid max-w-3xl grid-cols-1 gap-12 sm:grid-cols-3">
+        <div className="mx-auto mt-16 grid max-w-4xl grid-cols-1 gap-14 sm:grid-cols-3">
           <div>
-            <p className="font-display text-6xl font-bold text-ink">8</p>
-            <p className="mt-2 text-sm text-ink-secondary">intelligence modules scanned weekly</p>
+            <p className="font-display text-7xl font-bold tracking-tight text-ink md:text-8xl">8</p>
+            <p className="mt-3 text-sm text-ink-secondary">intelligence modules scanned weekly</p>
           </div>
           <div>
-            <p className="font-display text-6xl font-bold text-ink">4–8</p>
-            <p className="mt-2 text-sm text-ink-secondary">ranked actions, each with an asset</p>
+            <p className="font-display text-7xl font-bold tracking-tight text-ink md:text-8xl">4–8</p>
+            <p className="mt-3 text-sm text-ink-secondary">ranked actions, each with an asset</p>
           </div>
           <div>
-            <p className="font-display text-6xl font-bold text-ink">100%</p>
-            <p className="mt-2 text-sm text-ink-secondary">of claims cite source, text and time</p>
+            <p className="font-display text-7xl font-bold tracking-tight text-ink md:text-8xl">100%</p>
+            <p className="mt-3 text-sm text-ink-secondary">of claims cite source, text and time</p>
           </div>
         </div>
       </section>
