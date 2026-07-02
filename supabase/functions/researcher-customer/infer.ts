@@ -5,6 +5,7 @@
 
 import { MODELS } from "../_shared/contracts.ts";
 import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
+import { resolveModel } from "../_shared/router.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import type { CustomerInference } from "./types.ts";
@@ -100,9 +101,9 @@ export async function inferCustomerIntel(
       prompt_version: PROMPT_VERSION,
       input_snapshot: userPrompt,
     },
-    () =>
+    async () =>
       callClaude({
-        model: MODELS.haiku,
+        model: await resolveModel(sb, "researcher_structuring", MODELS.haiku),
         system: SYSTEM,
         messages: [{ role: "user", content: userPrompt }],
         maxTokens: 1200,

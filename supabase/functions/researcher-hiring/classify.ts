@@ -13,6 +13,7 @@
 
 import { MODELS } from "../_shared/contracts.ts";
 import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
+import { resolveModel } from "../_shared/router.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import type { JobPosting } from "./dataforseo-jobs.ts";
@@ -149,9 +150,9 @@ export async function classifyHiring(
         input_snapshot: { competitor: ctx.competitorName, postings: postings.length },
         // data_quality_score is set below once we know how much resolved.
       },
-      () =>
+      async () =>
         callClaude({
-          model: MODELS.haiku,
+          model: await resolveModel(sb, "researcher_structuring", MODELS.haiku),
           system,
           messages: [{ role: "user", content: instruction }],
           maxTokens: 1200,

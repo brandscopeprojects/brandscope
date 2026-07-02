@@ -17,8 +17,10 @@ import { MODELS, type ScanSynthesisMessage, type RecommendationEvidence } from "
 import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import { invokeFunction } from "../_shared/scan.ts";
+import { resolveModel } from "../_shared/router.ts";
 import {
   PROMPT_VERSION,
+  CONFIDENCE_FLOOR,
   levelFromScore,
   SUPERVISOR_SYSTEM,
   AUDITOR_SYSTEM,
@@ -277,9 +279,10 @@ async function runSupervisor(sb: SupabaseClient, logCtx: LogCtx, ctx: Ctx): Prom
     "Synthesise the cross-module competitive picture into the JSON brief.",
   ].join("\n");
 
+  const model = await resolveModel(sb, "synthesis", MODELS.sonnet);
   const res = await loggedLlm(sb, { ...logCtx, agent_name: "supervisor", input_snapshot: userMsg }, () =>
     callClaude({
-      model: MODELS.sonnet,
+      model,
       system: SUPERVISOR_SYSTEM,
       messages: [{ role: "user", content: userMsg }],
       maxTokens: SUPERVISOR_MAX_TOKENS,
@@ -327,6 +330,7 @@ async function runDrafter(
     "Produce 4–8 recommendations as a JSON array. Drop any that fail the Five-Question filter.",
   ].join("\n");
 
+  const model = await resolveModel(sb, "drafting", MODELS.sonnet);
   let valid: DraftRecommendation[] = [];
   for (let attempt = 0; attempt <= 2; attempt++) {
     const user =
@@ -339,7 +343,7 @@ async function runDrafter(
       { ...logCtx, agent_name: "drafter", retry_count: attempt, input_snapshot: attempt === 0 ? user : "(retry)" },
       () =>
         callClaude({
-          model: MODELS.sonnet,
+          model,
           system,
           messages: [{ role: "user", content: user }],
           maxTokens: DRAFTER_MAX_TOKENS,
@@ -417,6 +421,7 @@ async function runAuditor(
     ).slice(0, 6000),
   ].join("\n");
 
+  const model = await resolveModel(sb, "audit", MODELS.sonnet);
   let verdicts: AuditVerdict[] = [];
   for (let attempt = 0; attempt <= 1; attempt++) {
     const res = await loggedLlm(
@@ -424,7 +429,7 @@ async function runAuditor(
       { ...logCtx, agent_name: "auditor", retry_count: attempt, input_snapshot: attempt === 0 ? user : "(rewrite)" },
       () =>
         callClaude({
-          model: MODELS.sonnet,
+          model,
           system: AUDITOR_SYSTEM,
           messages: [{ role: "user", content: user }],
           maxTokens: AUDITOR_MAX_TOKENS,

@@ -6,6 +6,7 @@
 
 import { MODELS } from "../_shared/contracts.ts";
 import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
+import { resolveModel } from "../_shared/router.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import type { ContentMention, NewsItem } from "./dataforseo-promotions.ts";
@@ -147,9 +148,9 @@ export async function classifyPromo(
       input_snapshot: userMsg,
       data_quality_score: null,
     },
-    () =>
+    async () =>
       callClaude({
-        model: MODELS.haiku,
+        model: await resolveModel(sb, "researcher_structuring", MODELS.haiku),
         system: SYSTEM,
         messages: [{ role: "user", content: userMsg }],
         maxTokens: 400,
