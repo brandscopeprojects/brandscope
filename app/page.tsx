@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DashboardView } from "@/components/dashboard/DashboardView";
 import { ShowcaseActionCard } from "@/components/marketing/ShowcaseActionCard";
-import { DEMO_BRAND, DEMO_DASHBOARD } from "@/lib/data/demo";
+import { DEMO_BRAND, DEMO_DASHBOARD, DEMO_GEO } from "@/lib/data/demo";
 
 // Marketing homepage — calm, spacious, one idea per screen. Every visual is the
 // real product component with the RiversBet sample dataset, so the homepage can
@@ -133,6 +133,94 @@ export default function Home() {
           <div>
             <p className="font-display text-6xl font-bold text-ink">100%</p>
             <p className="mt-2 text-sm text-ink-secondary">of claims cite source, text and time</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── The visual moment — AI visibility, dark chapter ─── */}
+      {/* Dark is the sanctioned "moment" treatment (ui-constraints §15.3).
+          One meaningful colour on it: cobalt = you. Green only for the gain. */}
+      <section className="mx-auto max-w-[1120px] px-4 pb-32 md:px-6 md:pb-40">
+        <div className="overflow-hidden rounded-card bg-ink px-7 py-14 md:px-16 md:py-20">
+          <div className="grid items-center gap-12 md:grid-cols-2 md:gap-16">
+            {/* copy + score */}
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/40">
+                GEO · AI visibility
+              </p>
+              <h2 className="mt-5 font-display text-3xl font-bold leading-tight text-white md:text-4xl">
+                When bettors ask ChatGPT, do you come up?
+              </h2>
+              <p className="mt-6 max-w-md text-base leading-relaxed text-white/60">
+                Brandscope asks the questions your customers ask — across ChatGPT,
+                Claude, Gemini and Perplexity — and scores who the AI recommends.
+              </p>
+              <div className="mt-10 flex items-end gap-4">
+                <p className="font-display text-7xl font-bold leading-none text-white">
+                  {DEMO_GEO.score}
+                  <span className="text-2xl text-white/40">/100</span>
+                </p>
+                <p className="pb-1.5 font-mono text-sm text-opportunity">
+                  ▲ {DEMO_GEO.scoreChangeWow} vs last week
+                </p>
+              </div>
+              <Link
+                href="/preview/geo-aeo-seo"
+                className="mt-8 inline-block text-sm text-white/70 underline-offset-4 transition-colors hover:text-white hover:underline"
+              >
+                Explore GEO intelligence →
+              </Link>
+            </div>
+            {/* leaderboard — cobalt marks you, everything else recedes */}
+            <div className="min-w-0">
+              <p className="mb-4 font-mono text-xs text-white/40">
+                AI visibility score · Nigeria · week of 12 May
+              </p>
+              <ul className="space-y-3.5">
+                {[
+                  ...DEMO_GEO.competitorScores
+                    .filter((c): c is typeof c & { score: number } => c.score !== null)
+                    .map((c) => ({ name: c.competitorName, score: c.score, you: false })),
+                  { name: DEMO_BRAND.name, score: DEMO_GEO.score ?? 0, you: true },
+                ]
+                  .sort((a, b) => b.score - a.score)
+                  .map((row) => (
+                    <li key={row.name}>
+                      <div className="flex items-baseline justify-between">
+                        <span
+                          className={
+                            row.you
+                              ? "text-sm font-semibold text-white"
+                              : "text-sm text-white/50"
+                          }
+                        >
+                          {row.name}
+                          {row.you && (
+                            <span className="ml-2 rounded-chip bg-cobalt px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">
+                              you
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className={
+                            row.you
+                              ? "font-mono text-sm text-white"
+                              : "font-mono text-sm text-white/40"
+                          }
+                        >
+                          {row.score}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className={row.you ? "h-full rounded-full bg-cobalt" : "h-full rounded-full bg-white/25"}
+                          style={{ width: `${Math.round((row.score / 82) * 100)}%` }}
+                        />
+                      </div>
+                    </li>
+                  ))}
+              </ul>
+            </div>
           </div>
         </div>
       </section>
