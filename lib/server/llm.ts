@@ -50,16 +50,18 @@ export function hasOpenAiKey(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
 }
 
-/** Call Claude Sonnet 4.6 via the Anthropic Messages API. */
+/** Call Claude Sonnet 4.6 (or a router-resolved override) via the Anthropic Messages API. */
 export async function anthropicComplete(args: {
   system: string;
   messages: ChatMessage[];
   maxTokens?: number;
+  model?: string;
 }): Promise<AnthropicResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return { ok: false, reason: "not_configured", message: "Anthropic API key is not configured." };
   }
+  const model = args.model ?? CLAUDE_SONNET_MODEL;
 
   let res: Response;
   try {
@@ -71,7 +73,7 @@ export async function anthropicComplete(args: {
         "anthropic-version": ANTHROPIC_VERSION,
       },
       body: JSON.stringify({
-        model: CLAUDE_SONNET_MODEL,
+        model,
         max_tokens: args.maxTokens ?? 2048,
         system: args.system,
         messages: args.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -97,22 +99,24 @@ export async function anthropicComplete(args: {
   return {
     ok: true,
     text,
-    model: CLAUDE_SONNET_MODEL,
+    model,
     inputTokens: usage?.input_tokens ?? 0,
     outputTokens: usage?.output_tokens ?? 0,
   };
 }
 
-/** Call OpenAI GPT-4.1 Mini via the Chat Completions API. */
+/** Call OpenAI GPT-4.1 Mini (or a router-resolved override) via the Chat Completions API. */
 export async function openAiChat(args: {
   system: string;
   messages: ChatMessage[];
   maxTokens?: number;
+  model?: string;
 }): Promise<OpenAiChatResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return { ok: false, reason: "not_configured", message: "OpenAI API key is not configured." };
   }
+  const model = args.model ?? OPENAI_CHAT_MODEL;
 
   let res: Response;
   try {
@@ -123,7 +127,7 @@ export async function openAiChat(args: {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: OPENAI_CHAT_MODEL,
+        model,
         max_tokens: args.maxTokens ?? 1024,
         messages: [
           { role: "system", content: args.system },
@@ -149,7 +153,7 @@ export async function openAiChat(args: {
   const text = extractOpenAiText(body);
   const totalTokens =
     (body as { usage?: { total_tokens?: number } }).usage?.total_tokens ?? 0;
-  return { ok: true, text, model: OPENAI_CHAT_MODEL, totalTokens };
+  return { ok: true, text, model, totalTokens };
 }
 
 /** OpenAI Moderation (omni-moderation-latest) on a block of text. */

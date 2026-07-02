@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentBrand } from "@/lib/data/brand";
-import { anthropicComplete, moderateText, hasAnthropicKey, hasOpenAiKey } from "@/lib/server/llm";
+import {
+  anthropicComplete,
+  moderateText,
+  hasAnthropicKey,
+  hasOpenAiKey,
+  CLAUDE_SONNET_MODEL,
+} from "@/lib/server/llm";
+import { resolveModel } from "@/lib/server/model-router";
 import type { Json } from "@/types/database.types";
 
 /**
@@ -98,8 +106,11 @@ export async function POST(req: Request) {
 
   // --- Draft with Claude Sonnet 4.6 -------------------------------------------
   const evidenceText = summariseEvidence(rec.evidence);
+  const markets = brand.market.join(", ");
   const system =
-    "You are a senior iGaming marketing strategist for a Nigerian/Kenyan/South African brand. " +
+    (markets
+      ? `You are a senior iGaming marketing strategist for a brand competing in ${markets}. `
+      : "You are a senior iGaming marketing strategist. ") +
     "Draft an executable, compliant campaign brief responding to the competitive recommendation provided. " +
     "Respond with ONLY valid JSON of shape " +
     '{"sections":[{"label":string,"body":string}],"channels":string[],"budget":string}. ' +
@@ -111,10 +122,14 @@ export async function POST(req: Request) {
     `Category: ${rec.category}\n` +
     `Evidence:\n${evidenceText || "(no structured evidence provided)"}`;
 
+  // Runtime model router (model_router_config is service-role-only → admin client).
+  const model = await resolveModel(createAdminClient(), "asset_generation", CLAUDE_SONNET_MODEL);
+
   const draft = await anthropicComplete({
     system,
     messages: [{ role: "user", content: userPrompt }],
     maxTokens: 2048,
+    model,
   });
 
   if (!draft.ok) {

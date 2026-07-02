@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentBrand } from "@/lib/data/brand";
-import { openAiChat, hasOpenAiKey, type ChatMessage } from "@/lib/server/llm";
+import { openAiChat, hasOpenAiKey, OPENAI_CHAT_MODEL, type ChatMessage } from "@/lib/server/llm";
+import { resolveModel } from "@/lib/server/model-router";
 
 /**
  * POST /api/chat — answer a brand-chat message with GPT-4.1 Mini, grounded in the
@@ -132,10 +134,14 @@ export async function POST(req: Request) {
   // --- Build brand context server-side ----------------------------------------
   const systemPrompt = await buildSystemPrompt(supabase, brand);
 
+  // Runtime model router (model_router_config is service-role-only → admin client).
+  const model = await resolveModel(createAdminClient(), "chat", OPENAI_CHAT_MODEL);
+
   const completion = await openAiChat({
     system: systemPrompt,
     messages: [...history, { role: "user", content: message }],
     maxTokens: 1024,
+    model,
   });
 
   if (!completion.ok) {
@@ -194,8 +200,11 @@ async function buildSystemPrompt(
   supabase: SupabaseClient,
   brand: { id: string; name: string; market: string[] },
 ): Promise<string> {
+  const markets = brand.market.join(", ");
   const parts: string[] = [
-    "You are Brandscope's brand-intelligence assistant for an iGaming brand in Sub-Saharan Africa.",
+    markets
+      ? `You are Brandscope's brand-intelligence assistant for an iGaming brand competing in ${markets}.`
+      : "You are Brandscope's brand-intelligence assistant for an iGaming brand.",
     "Answer ONLY from the brand context below. If the data does not cover the question, say so plainly — never invent numbers, competitors, or sources.",
     `Brand: ${brand.name}. Markets: ${brand.market.join(", ") || "unspecified"}.`,
   ];
