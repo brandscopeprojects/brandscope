@@ -20,6 +20,7 @@ import { MODELS, type ScanModuleMessage, type CompetitorRef } from "../_shared/c
 import { completeModule, invokeFunction, enqueueSynthesis } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { loggedLlm, callClaude, parseJsonFromModel } from "../_shared/llm.ts";
+import { resolveModel } from "../_shared/router.ts";
 import { makeEvidence } from "../_shared/evidence.ts";
 import type { ContentGap, KeywordGap, SerpPosition } from "./types.ts";
 import {
@@ -295,9 +296,9 @@ async function deriveContentGaps(
         data_quality_score: 1,
         input_snapshot: gapKeywords,
       },
-      () =>
+      async () =>
         callClaude({
-          model: MODELS.haiku,
+          model: await resolveModel(sb, "researcher_structuring", MODELS.haiku),
           temperature: 0.1,
           maxTokens: 700,
           system:

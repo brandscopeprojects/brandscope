@@ -19,6 +19,7 @@ import { dfsPost, dfsTaskPostAndPoll, firstResult } from "../_shared/dataforseo.
 import { asUntrustedData } from "../_shared/guard.ts";
 import { callClaude, loggedLlm, parseJsonFromModel, type LlmResult } from "../_shared/llm.ts";
 import { MODELS } from "../_shared/contracts.ts";
+import { resolveModel } from "../_shared/router.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 
 // ---------------------------------------------------------------------------
@@ -374,7 +375,7 @@ export async function analysePlatform(
       input_snapshot: { platform: platform.key, responses: nonEmpty.length },
     },
     () =>
-      callHaiku({
+      callHaiku(sb, {
         system,
         user: `Analyse these ${nonEmpty.length} responses:\n\n${wrapped}`,
       }),
@@ -416,9 +417,9 @@ function dominantSentiment(extractions: Extraction[]): string {
 const PROMPT_VERSION = "geo_aeo_haiku_v1";
 
 /** Thin Haiku wrapper returning the LlmResult loggedLlm expects. */
-function callHaiku(opts: { system: string; user: string }): Promise<LlmResult> {
+async function callHaiku(sb: SupabaseClient, opts: { system: string; user: string }): Promise<LlmResult> {
   return callClaude({
-    model: MODELS.haiku,
+    model: await resolveModel(sb, "geo_probe", MODELS.haiku),
     system: opts.system,
     messages: [{ role: "user", content: opts.user }],
     maxTokens: 2000,

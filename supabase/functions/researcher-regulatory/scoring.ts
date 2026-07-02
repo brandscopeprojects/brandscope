@@ -12,6 +12,7 @@
 
 import { MODELS } from "../_shared/contracts.ts";
 import { loggedLlm, callClaude, parseJsonFromModel } from "../_shared/llm.ts";
+import { resolveModel } from "../_shared/router.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import { DIMENSIONS, type DimensionKey, type DimensionAssessment, type Violation } from "./types.ts";
@@ -142,9 +143,9 @@ export async function assessCompetitor(
         prompt_version: PROMPT_VERSION,
         input_snapshot: `${params.competitorName} / ${params.market}`,
       },
-      () =>
+      async () =>
         callClaude({
-          model: MODELS.sonnet,
+          model: await resolveModel(sb, "regulatory_rag", MODELS.sonnet),
           system: SYSTEM_PROMPT,
           messages: [{ role: "user", content: userPrompt }],
           maxTokens: 1800,
