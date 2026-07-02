@@ -39,6 +39,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Bare /admin means the Brandscope back office (owner decision): send it to
+  // the internal console. Brand-admin tabs remain at /admin/settings etc.
+  if (pathname === BRAND_ADMIN_PREFIX) {
+    return NextResponse.redirect(new URL(INTERNAL_ADMIN_PREFIX, request.url));
+  }
+
   // Role-gated areas.
   const inInternal = pathname.startsWith(INTERNAL_ADMIN_PREFIX);
   const inBrandAdmin = pathname.startsWith(BRAND_ADMIN_PREFIX);
