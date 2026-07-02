@@ -58,7 +58,7 @@ export default function Home() {
 
       {/* ── Hero ────────────────────────────────────────────── */}
       <section className="mx-auto max-w-5xl px-6 pt-20 text-center md:pt-28">
-        <Kicker>Competitive intelligence for iGaming · NG · KE · ZA</Kicker>
+        <Kicker>Competitive intelligence for iGaming brands</Kicker>
         <h1 className="mx-auto mt-7 max-w-4xl font-display text-[3.4rem] font-bold leading-[0.98] tracking-tight text-ink md:text-8xl">
           Know what your competitors did <span className="text-cobalt">this week.</span>
         </h1>
@@ -170,7 +170,7 @@ export default function Home() {
             {/* leaderboard — cobalt marks you, everything else recedes */}
             <div className="min-w-0">
               <p className="mb-4 font-mono text-xs text-white/40">
-                AI visibility score · Nigeria · week of 12 May
+                AI visibility score · sample market · week of 12 May
               </p>
               <ul className="space-y-3.5">
                 {[
@@ -263,7 +263,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-8 sm:flex-row">
           <Wordmark />
           <p className="text-xs text-ink-faint">
-            Built for iGaming operators in Nigeria, Kenya and South Africa.
+            Built for iGaming operators competing anywhere.
           </p>
         </div>
       </footer>
