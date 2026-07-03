@@ -79,7 +79,10 @@ export async function recordFeatureHealth(
   },
 ): Promise<void> {
   try {
-    await sb.from("feature_health_logs").insert(params);
+    await sb.from("feature_health_logs").insert({
+      ...params,
+      status: FEATURE_STATUS[params.status] ?? "partial",
+    });
   } catch (_e) {
     // swallow
   }
