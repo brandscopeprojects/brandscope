@@ -10,13 +10,21 @@ type MultiSelectChipsProps = {
   options: readonly Option[];
   selected: string[];
   onToggle: (value: string) => void;
+  /** Values the setup agent detected as the brand's territory — get a ✦ marker + ring. */
+  suggested?: string[];
 };
 
-export function MultiSelectChips({ options, selected, onToggle }: MultiSelectChipsProps) {
+export function MultiSelectChips({
+  options,
+  selected,
+  onToggle,
+  suggested = [],
+}: MultiSelectChipsProps) {
   return (
     <div className="flex flex-wrap gap-2" role="group" aria-label="Markets">
       {options.map((opt) => {
         const isSelected = selected.includes(opt.value);
+        const isSuggested = suggested.includes(opt.value);
         return (
           <button
             key={opt.value}
@@ -28,8 +36,10 @@ export function MultiSelectChips({ options, selected, onToggle }: MultiSelectChi
               isSelected
                 ? "bg-cobalt text-white"
                 : "bg-base-secondary text-ink-secondary hover:text-ink",
+              isSuggested && !isSelected ? "ring-2 ring-cobalt/50" : "",
             ].join(" ")}
           >
+            {isSuggested ? "✦ " : ""}
             {opt.label}
           </button>
         );

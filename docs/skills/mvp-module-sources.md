@@ -80,6 +80,14 @@ Auto-fill competitor **name** and **tier** when a domain is entered.
 - **Editable:** the user can override the auto-detected tier in onboarding (step 4) and `/admin/competitors`.
 - Writes: `competitors.tier` (+ `name`); same heuristic used for the brand's own tier at onboarding.
 
+## Onboarding Setup Agent (onboarding-suggest Edge Function) — owner-approved 2026-07
+Territory detection + competitor pre-population for the onboarding wizard.
+- **Sources:** the brand's own homepage (plain public `fetch`, wrapped as untrusted data) + **Claude via the model router** (task `onboarding_suggest`, default Sonnet 4.6, fallback Haiku). NO DataForSEO here (runs pre-brand; keep fast/cheap).
+- **Output (suggestions only, never persisted by the function):** brand `name`; `markets[]` constrained to the supported African market values (`lib/onboarding/constants.ts` MARKETS — the list of African countries where iGaming is legal/regulated); up to **5** competitors `{domain, name, tier}` — real licensed operators only, model told to omit rather than guess.
+- **Auth:** internal — `Bearer CRON_SECRET` **or** `Bearer SUPABASE_SERVICE_ROLE_KEY` (the Next server action holds the service-role key, not CRON_SECRET).
+- **UI contract:** suggested markets are pre-selected + highlighted (✦) but fully editable; suggested competitors pre-fill only while all rows are blank; user edits always win.
+- **Market → DataForSEO location codes** for ALL supported markets live in `supabase/functions/_shared/dataforseo.ts` `MARKET_LOCATION` (keyed by `brands.market` values) — keep in sync with MARKETS.
+
 ## Endpoints used at MVP but NOT detailed in the API map (confirm shapes vs DataForSEO docs at build)
 - OnPage microdata / Content Parsing (AEO schema, Promotions proxy)
 - `serp/google/jobs` (Hiring)

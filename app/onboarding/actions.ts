@@ -18,6 +18,7 @@ import {
   COMPETITOR_MAX,
   MARKET_VALUES,
   type DetectedBrandResult,
+  type OnboardingSuggestion,
 } from "./action-types";
 
 /**
@@ -29,6 +30,57 @@ export async function detectBrand(domain: string): Promise<DetectedBrandResult> 
   await requireUser(); // any signed-in user; no brand needed yet
   const detected = await detectBrandFromDomain(domain);
   return { domain: detected.domain, name: detected.name, tier: detected.tier };
+}
+
+const EMPTY_SUGGESTION: OnboardingSuggestion = { name: null, markets: [], competitors: [] };
+const VALID_TIERS = new Set(["dominant", "challenger", "mid_market", "niche"]);
+
+/**
+ * Setup-agent suggestion — detect the brand's territory (markets) and likely
+ * competitors from its domain. Proxies the onboarding-suggest Edge Function
+ * (provider keys live in Supabase Edge secrets, not Vercel — docs/env-vars.md);
+ * the function accepts the service-role bearer for server→function calls.
+ * Best-effort: any failure returns an empty suggestion and the wizard stays manual.
+ */
+export async function suggestOnboarding(rawDomain: string): Promise<OnboardingSuggestion> {
+  await requireUser();
+  const domain = normaliseDomain(rawDomain);
+  if (!domain) return EMPTY_SUGGESTION;
+
+  try {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/onboarding-suggest`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ domain }),
+        signal: AbortSignal.timeout(25_000),
+        cache: "no-store",
+      },
+    );
+    if (!res.ok) return EMPTY_SUGGESTION;
+    const data = (await res.json()) as Partial<OnboardingSuggestion>;
+    // Re-validate here: the function already normalises, but this is the trust boundary.
+    return {
+      name: typeof data.name === "string" && data.name.trim() ? data.name.trim() : null,
+      markets: (Array.isArray(data.markets) ? data.markets : []).filter((m) =>
+        MARKET_VALUES.includes(m),
+      ),
+      competitors: (Array.isArray(data.competitors) ? data.competitors : [])
+        .map((c) => ({
+          domain: normaliseDomain(String(c?.domain ?? "")),
+          name: String(c?.name ?? "").trim(),
+          tier: (VALID_TIERS.has(String(c?.tier)) ? c.tier : "challenger") as CompetitorTier,
+        }))
+        .filter((c) => c.domain.length > 0 && c.domain !== domain)
+        .slice(0, 5),
+    };
+  } catch {
+    return EMPTY_SUGGESTION;
+  }
 }
 
 export type CompetitorInput = {

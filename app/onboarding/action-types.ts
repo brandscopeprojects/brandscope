@@ -11,3 +11,10 @@ export type DetectedBrandResult = {
   name: string;
   tier: CompetitorTier;
 };
+
+/** Setup-agent output (onboarding-suggest Edge Function). Best-effort — empty on failure. */
+export type OnboardingSuggestion = {
+  name: string | null;
+  markets: string[];
+  competitors: Array<{ domain: string; name: string; tier: CompetitorTier }>;
+};

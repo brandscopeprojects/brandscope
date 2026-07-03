@@ -8,20 +8,23 @@
 // /onboarding/scanning page; the rail shows it as the final step.
 // Submits via `completeOnboarding`; auto-detection via `detectBrand`.
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { TextInput } from "./TextInput";
 import { AutoDetectInput } from "./AutoDetectInput";
-import { MultiSelectChips } from "./MultiSelectChips";
+import { MarketPicker } from "./MarketPicker";
 import { CompetitorList, type CompetitorEntry } from "./CompetitorList";
 import { PrimaryButton } from "./PrimaryButton";
 import {
-  MARKETS,
   INDUSTRIES,
   COMPETITOR_DEFAULT_COUNT,
   COMPETITOR_MAX,
 } from "@/lib/onboarding/constants";
-import { completeOnboarding, detectBrand } from "@/app/onboarding/actions";
+import {
+  completeOnboarding,
+  detectBrand,
+  suggestOnboarding,
+} from "@/app/onboarding/actions";
 
 // Rail steps per the mockup (Scanning is the /onboarding/scanning page).
 const RAIL_STEPS = ["Brand Domain", "Market", "Industry", "Competitors", "Scanning"];
@@ -154,6 +157,48 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
     Array.from({ length: COMPETITOR_DEFAULT_COUNT }, blankRow),
   );
 
+  // Setup agent (onboarding-suggest): detected territory + suggested competitors.
+  // Fires in the background when the user leaves the domain step; everything it
+  // fills stays fully editable. User edits always win over late suggestions.
+  const [suggestedMarkets, setSuggestedMarkets] = useState<string[]>([]);
+  const [suggesting, setSuggesting] = useState(false);
+  const [competitorsPrefilled, setCompetitorsPrefilled] = useState(false);
+  const marketsTouched = useRef(false);
+  const competitorsTouched = useRef(false);
+  const suggestedForDomain = useRef<string | null>(null);
+
+  function runSuggestion(domain: string) {
+    const key = domain.trim().toLowerCase();
+    if (!key || suggestedForDomain.current === key) return;
+    suggestedForDomain.current = key;
+    setSuggesting(true);
+    suggestOnboarding(domain)
+      .then((s) => {
+        setSuggestedMarkets(s.markets);
+        setBrandName((prev) => (prev.trim() ? prev : (s.name ?? prev)));
+        // Pre-select the detected territory unless the user already chose markets.
+        if (!marketsTouched.current && s.markets.length > 0) {
+          setMarkets(s.markets);
+        }
+        // Pre-populate competitors only while every row is still blank.
+        if (!competitorsTouched.current && s.competitors.length > 0) {
+          setCompetitors(
+            s.competitors.map((c) => ({
+              ...blankRow(),
+              domain: c.domain,
+              name: c.name,
+              tier: c.tier,
+            })),
+          );
+          setCompetitorsPrefilled(true);
+        }
+      })
+      .catch(() => {
+        // Best-effort: the wizard works fully manually.
+      })
+      .finally(() => setSuggesting(false));
+  }
+
   // ---- handlers ----
   async function detectBrandName(domain: string) {
     if (!domain.trim()) return;
@@ -170,18 +215,22 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
   }
 
   function toggleMarket(value: string) {
+    marketsTouched.current = true;
     setMarkets((prev) =>
       prev.includes(value) ? prev.filter((m) => m !== value) : [...prev, value],
     );
   }
 
   function patchCompetitor(id: string, patch: Partial<CompetitorEntry>) {
+    competitorsTouched.current = true;
     setCompetitors((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
   function removeCompetitor(id: string) {
+    competitorsTouched.current = true;
     setCompetitors((prev) => prev.filter((c) => c.id !== id));
   }
   function addCompetitor() {
+    competitorsTouched.current = true;
     setCompetitors((prev) =>
       prev.length >= COMPETITOR_MAX ? prev : [...prev, blankRow()],
     );
@@ -228,6 +277,8 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
   function next() {
     setError(null);
     if (!canAdvance()) return;
+    // Leaving the domain step → kick off the setup agent in the background.
+    if (step === 0) runSuggestion(brandDomain);
     setStep((s) => Math.min(s + 1, SCREEN_COUNT - 1));
   }
   function back() {
@@ -328,20 +379,37 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
             )}
 
             {step === 1 && (
-              <div className="my-auto flex w-full max-w-md flex-col gap-5 self-center">
+              <div className="flex w-full flex-col gap-5">
                 <div>
                   <h2 className="font-display text-2xl font-bold text-ink">
                     Where do you operate?
                   </h2>
                   <p className="mt-2 text-sm text-ink-secondary">
-                    Select every market you compete in (at least one).
+                    Every African market where iGaming is regulated. Select all
+                    markets you compete in (at least one).
                   </p>
                 </div>
-                <MultiSelectChips
-                  options={MARKETS}
-                  selected={markets}
-                  onToggle={toggleMarket}
-                />
+                {suggesting && (
+                  <div className="flex items-center gap-2 rounded-chip bg-base-secondary px-4 py-2.5 text-xs text-ink-secondary">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-cobalt" aria-hidden />
+                    Setup agent is scanning {brandDomain || "your site"} to detect
+                    your territory…
+                  </div>
+                )}
+                {!suggesting && suggestedMarkets.length > 0 && (
+                  <div className="rounded-chip bg-base-secondary px-4 py-2.5 text-xs text-ink-secondary">
+                    <span className="font-medium text-cobalt">✦ Detected territory</span>{" "}
+                    — highlighted markets were found for {brandName || brandDomain}.
+                    Adjust freely.
+                  </div>
+                )}
+                <div className="max-h-[340px] overflow-y-auto pr-1">
+                  <MarketPicker
+                    selected={markets}
+                    onToggle={toggleMarket}
+                    suggested={suggestedMarkets}
+                  />
+                </div>
                 <PrimaryButton onClick={next} disabled={!canAdvance()}>
                   Continue →
                 </PrimaryButton>
@@ -396,6 +464,18 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
                     name and tier — edit anything that looks off.
                   </p>
                 </div>
+                {suggesting && (
+                  <div className="flex items-center gap-2 rounded-chip bg-base-secondary px-4 py-2.5 text-xs text-ink-secondary">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-cobalt" aria-hidden />
+                    Setup agent is looking for competitors in your market…
+                  </div>
+                )}
+                {!suggesting && competitorsPrefilled && (
+                  <div className="rounded-chip bg-base-secondary px-4 py-2.5 text-xs text-ink-secondary">
+                    <span className="font-medium text-cobalt">✦ Suggested by the setup agent</span>{" "}
+                    from your market — edit, remove, or add your own.
+                  </div>
+                )}
                 <CompetitorList
                   competitors={competitors}
                   onChange={patchCompetitor}
