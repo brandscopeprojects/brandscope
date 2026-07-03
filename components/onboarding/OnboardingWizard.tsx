@@ -1,27 +1,31 @@
 "use client";
 
-// OnboardingWizard — the 5-step brand-setup wizard (Screen 1, /onboarding).
-// Client component holding wizard state; submits via the `completeOnboarding`
-// server action, then redirects to /onboarding/scanning. Auto-detection (brand
-// name from domain; competitor name+tier) runs via the `detectBrand` server action.
-// Light theme throughout (the scanning screen is the only dark one).
+// OnboardingWizard — the brand-setup wizard (Screen 1, /onboarding), matching
+// the approved onboarding mockup: left rail with the wordmark + vertical step
+// list ("Step N of 5 · Let's set up your intelligence engine"), a main card
+// asking ONE question per screen with a single Continue →, the scan info note,
+// and the "Why we need this" checklist. Step 5 (Scanning) is the dark
+// /onboarding/scanning page; the rail shows it as the final step.
+// Submits via `completeOnboarding`; auto-detection via `detectBrand`.
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { StepIndicator } from "./StepIndicator";
 import { TextInput } from "./TextInput";
 import { AutoDetectInput } from "./AutoDetectInput";
 import { MultiSelectChips } from "./MultiSelectChips";
 import { CompetitorList, type CompetitorEntry } from "./CompetitorList";
 import { PrimaryButton } from "./PrimaryButton";
 import {
-  ONBOARDING_STEPS,
   MARKETS,
   INDUSTRIES,
   COMPETITOR_DEFAULT_COUNT,
   COMPETITOR_MAX,
 } from "@/lib/onboarding/constants";
 import { completeOnboarding, detectBrand } from "@/app/onboarding/actions";
+
+// Rail steps per the mockup (Scanning is the /onboarding/scanning page).
+const RAIL_STEPS = ["Brand Domain", "Market", "Industry", "Competitors", "Scanning"];
+const SCREEN_COUNT = 4; // screens 0–3 live here; 4 = the scanning page
 
 let rowSeq = 0;
 function blankRow(): CompetitorEntry {
@@ -35,13 +39,106 @@ function blankRow(): CompetitorEntry {
   };
 }
 
+function Wordmark() {
+  return (
+    <span className="flex items-center gap-2">
+      <span className="h-2.5 w-2.5 rounded-full bg-cobalt" aria-hidden />
+      <span className="font-display text-lg font-bold tracking-tight text-ink">
+        Brandscope
+      </span>
+    </span>
+  );
+}
+
+/** Left rail: wordmark, step-of-5 heading, vertical step list (mockup panel 1). */
+function StepRail({ current }: { current: number }) {
+  return (
+    <div className="rounded-card bg-card p-6 shadow-sh1">
+      <Wordmark />
+      <p className="mt-6 text-xs text-ink-faint">Step {current + 1} of {RAIL_STEPS.length}</p>
+      <p className="mt-1 text-sm font-semibold leading-snug text-ink">
+        Let&rsquo;s set up your intelligence engine
+      </p>
+      <ol className="mt-6 flex flex-col">
+        {RAIL_STEPS.map((label, i) => {
+          const isActive = i === current;
+          const isDone = i < current;
+          return (
+            <li key={label} className="flex items-stretch gap-3">
+              <div className="flex flex-col items-center">
+                <span
+                  className={[
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                    isActive
+                      ? "bg-cobalt text-white"
+                      : isDone
+                        ? "bg-cobalt/15 text-cobalt"
+                        : "bg-base-secondary text-ink-faint",
+                  ].join(" ")}
+                >
+                  {isDone ? "✓" : i + 1}
+                </span>
+                {i < RAIL_STEPS.length - 1 && (
+                  <span
+                    className={[
+                      "w-px flex-1 min-h-[18px]",
+                      isDone ? "bg-cobalt/30" : "bg-divider",
+                    ].join(" ")}
+                    aria-hidden
+                  />
+                )}
+              </div>
+              <span
+                className={[
+                  "pb-4 pt-1 text-sm",
+                  isActive
+                    ? "font-medium text-cobalt"
+                    : isDone
+                      ? "text-ink"
+                      : "text-ink-faint",
+                ].join(" ")}
+              >
+                {label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+/** "Why we need this" checklist (mockup panel 1, bottom-left). */
+function WhyCard() {
+  const points = [
+    "Track your visibility across markets",
+    "Monitor competitor positioning",
+    "Generate actionable recommendations",
+  ];
+  return (
+    <div className="rounded-card bg-card p-5 shadow-sh1">
+      <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">
+        Why we need this
+      </p>
+      <ul className="mt-3 flex flex-col gap-2">
+        {points.map((p) => (
+          <li key={p} className="flex items-start gap-2 text-sm text-ink-secondary">
+            <span className="mt-0.5 text-cobalt" aria-hidden>✓</span>
+            {p}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: string }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  // Step 1 — brand
+  // Step 1 — brand domain (+ auto-detected name)
   const [brandDomain, setBrandDomain] = useState(initialDomain);
   const [brandName, setBrandName] = useState("");
   const [brandDetecting, setBrandDetecting] = useState(false);
@@ -131,7 +228,7 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
   function next() {
     setError(null);
     if (!canAdvance()) return;
-    setStep((s) => Math.min(s + 1, ONBOARDING_STEPS.length - 1));
+    setStep((s) => Math.min(s + 1, SCREEN_COUNT - 1));
   }
   function back() {
     setError(null);
@@ -159,161 +256,178 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
     });
   }
 
-  const filledCompetitors = competitors.filter((c) => c.domain.trim().length > 0);
+  const isLastScreen = step === SCREEN_COUNT - 1;
 
   return (
-    <div className="flex w-full max-w-2xl flex-col gap-8">
-      <StepIndicator steps={ONBOARDING_STEPS} current={step} />
-
-      <div className="rounded-card border border-divider bg-card p-6 shadow-sh1">
-        {step === 0 && (
-          <div className="flex flex-col gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-ink">Your brand</h2>
-              <p className="text-sm text-ink-secondary">
-                Enter your website. We’ll detect your brand name automatically.
-              </p>
-            </div>
-            <AutoDetectInput
-              label="Brand domain"
-              placeholder="yourbrand.com"
-              value={brandDomain}
-              detecting={brandDetecting}
-              onChange={setBrandDomain}
-              onDetect={detectBrandName}
-            />
-            <TextInput
-              label="Brand name"
-              placeholder="Auto-detected — edit if needed"
-              value={brandName}
-              onChange={(e) => setBrandName(e.target.value)}
-            />
-          </div>
-        )}
-
-        {step === 1 && (
-          <div className="flex flex-col gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-ink">Your markets</h2>
-              <p className="text-sm text-ink-secondary">
-                Select every market you operate in (at least one).
-              </p>
-            </div>
-            <MultiSelectChips
-              options={MARKETS}
-              selected={markets}
-              onToggle={toggleMarket}
-            />
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="flex flex-col gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-ink">Your industry</h2>
-              <p className="text-sm text-ink-secondary">
-                iGaming is available now. Other verticals are coming soon.
-              </p>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="industry-select"
-                className="text-sm font-medium text-ink-secondary"
-              >
-                Industry
-              </label>
-              <select
-                id="industry-select"
-                value={industry}
-                onChange={(e) => setIndustry(e.target.value)}
-                className="rounded-chip border border-divider bg-card px-3 py-2 text-sm text-ink outline-none focus:border-cobalt"
-              >
-                {INDUSTRIES.map((opt) => (
-                  <option key={opt.value} value={opt.value} disabled={opt.comingSoon}>
-                    {opt.label}
-                    {opt.comingSoon ? " (Coming soon)" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="flex flex-col gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-ink">Your competitors</h2>
-              <p className="text-sm text-ink-secondary">
-                Add up to {COMPETITOR_MAX}. We’ll detect each brand’s name and tier —
-                edit anything that looks off.
-              </p>
-            </div>
-            <CompetitorList
-              competitors={competitors}
-              onChange={patchCompetitor}
-              onRemove={removeCompetitor}
-              onAdd={addCompetitor}
-              onDetect={detectCompetitor}
-            />
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="flex flex-col gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-ink">Confirm &amp; start</h2>
-              <p className="text-sm text-ink-secondary">
-                We’ll set up your workspace and run your first scan.
-              </p>
-            </div>
-            <dl className="flex flex-col gap-3 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-ink-secondary">Brand</dt>
-                <dd className="text-ink">
-                  {brandName || "—"}{" "}
-                  <span className="font-mono text-xs text-ink-faint">
-                    {brandDomain}
-                  </span>
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-ink-secondary">Markets</dt>
-                <dd className="text-ink">
-                  {markets
-                    .map((m) => MARKETS.find((x) => x.value === m)?.label ?? m)
-                    .join(", ") || "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-ink-secondary">Industry</dt>
-                <dd className="text-ink">
-                  {INDUSTRIES.find((i) => i.value === industry)?.label ?? industry}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-ink-secondary">Competitors</dt>
-                <dd className="text-ink">{filledCompetitors.length}</dd>
-              </div>
-            </dl>
-          </div>
-        )}
-
-        {error && <p className="mt-4 text-sm text-urgent">{error}</p>}
+    <div className="mx-auto w-full max-w-5xl">
+      {/* Mobile: compact step header (rail collapses) */}
+      <div className="mb-4 md:hidden">
+        <div className="flex items-center justify-between">
+          <Wordmark />
+          <span className="text-xs text-ink-faint">
+            Step {step + 1} of {RAIL_STEPS.length} · {RAIL_STEPS[step]}
+          </span>
+        </div>
+        <div className="mt-3 h-1 overflow-hidden rounded-full bg-base-secondary">
+          <div
+            className="h-full rounded-full bg-cobalt transition-all"
+            style={{ width: `${((step + 1) / RAIL_STEPS.length) * 100}%` }}
+          />
+        </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <PrimaryButton variant="ghost" onClick={back} disabled={step === 0 || pending}>
-          Back
-        </PrimaryButton>
-        {step < ONBOARDING_STEPS.length - 1 ? (
-          <PrimaryButton onClick={next} disabled={!canAdvance()}>
-            Continue
-          </PrimaryButton>
-        ) : (
-          <PrimaryButton onClick={submit} disabled={pending}>
-            {pending ? "Setting up…" : "Start first scan"}
-          </PrimaryButton>
-        )}
+      <div className="grid gap-5 md:grid-cols-[260px_minmax(0,1fr)]">
+        {/* Left rail + why-card (desktop) */}
+        <div className="hidden flex-col gap-5 md:flex">
+          <StepRail current={step} />
+          <WhyCard />
+        </div>
+
+        {/* Main card */}
+        <div className="flex flex-col">
+          <div className="relative flex min-h-[420px] flex-col rounded-card bg-card p-6 shadow-sh1 md:p-10">
+            <a
+              href="mailto:support@brandscope.io"
+              className="absolute right-5 top-5 text-xs text-ink-faint transition-colors hover:text-ink"
+            >
+              ? Help
+            </a>
+
+            {step === 0 && (
+              <div className="my-auto flex w-full max-w-md flex-col gap-5 self-center">
+                <div>
+                  <h2 className="font-display text-2xl font-bold text-ink">
+                    What is your brand&rsquo;s domain?
+                  </h2>
+                  <p className="mt-2 text-sm text-ink-secondary">
+                    This will be used to track your digital presence.
+                  </p>
+                </div>
+                <AutoDetectInput
+                  label="Brand domain"
+                  placeholder="yourbrand.com"
+                  value={brandDomain}
+                  detecting={brandDetecting}
+                  onChange={setBrandDomain}
+                  onDetect={detectBrandName}
+                />
+                <TextInput
+                  label="Brand name (auto-detected)"
+                  placeholder="Edit if needed"
+                  value={brandName}
+                  onChange={(e) => setBrandName(e.target.value)}
+                />
+                <PrimaryButton onClick={next} disabled={!canAdvance()}>
+                  Continue →
+                </PrimaryButton>
+                <div className="rounded-chip bg-base-secondary px-4 py-3 text-xs leading-relaxed text-ink-secondary">
+                  We will scan your site and public data sources to build your
+                  competitive intelligence.
+                </div>
+              </div>
+            )}
+
+            {step === 1 && (
+              <div className="my-auto flex w-full max-w-md flex-col gap-5 self-center">
+                <div>
+                  <h2 className="font-display text-2xl font-bold text-ink">
+                    Where do you operate?
+                  </h2>
+                  <p className="mt-2 text-sm text-ink-secondary">
+                    Select every market you compete in (at least one).
+                  </p>
+                </div>
+                <MultiSelectChips
+                  options={MARKETS}
+                  selected={markets}
+                  onToggle={toggleMarket}
+                />
+                <PrimaryButton onClick={next} disabled={!canAdvance()}>
+                  Continue →
+                </PrimaryButton>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="my-auto flex w-full max-w-md flex-col gap-5 self-center">
+                <div>
+                  <h2 className="font-display text-2xl font-bold text-ink">
+                    What&rsquo;s your industry?
+                  </h2>
+                  <p className="mt-2 text-sm text-ink-secondary">
+                    iGaming is available now. Other verticals are coming soon.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    htmlFor="industry-select"
+                    className="text-sm font-medium text-ink-secondary"
+                  >
+                    Industry
+                  </label>
+                  <select
+                    id="industry-select"
+                    value={industry}
+                    onChange={(e) => setIndustry(e.target.value)}
+                    className="rounded-chip border border-divider bg-card px-3 py-2.5 text-sm text-ink outline-none focus:border-cobalt"
+                  >
+                    {INDUSTRIES.map((opt) => (
+                      <option key={opt.value} value={opt.value} disabled={opt.comingSoon}>
+                        {opt.label}
+                        {opt.comingSoon ? " (Coming soon)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <PrimaryButton onClick={next} disabled={!canAdvance()}>
+                  Continue →
+                </PrimaryButton>
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="flex w-full flex-col gap-5">
+                <div>
+                  <h2 className="font-display text-2xl font-bold text-ink">
+                    Who are your competitors?
+                  </h2>
+                  <p className="mt-2 text-sm text-ink-secondary">
+                    Add up to {COMPETITOR_MAX}. We&rsquo;ll detect each brand&rsquo;s
+                    name and tier — edit anything that looks off.
+                  </p>
+                </div>
+                <CompetitorList
+                  competitors={competitors}
+                  onChange={patchCompetitor}
+                  onRemove={removeCompetitor}
+                  onAdd={addCompetitor}
+                  onDetect={detectCompetitor}
+                />
+                <PrimaryButton onClick={submit} disabled={!canAdvance() || pending}>
+                  {pending ? "Setting up…" : "Start first scan →"}
+                </PrimaryButton>
+              </div>
+            )}
+
+            {error && <p className="mt-4 text-sm text-urgent">{error}</p>}
+          </div>
+
+          {step > 0 && (
+            <button
+              type="button"
+              onClick={back}
+              disabled={pending}
+              className="mt-4 self-start text-sm text-ink-secondary transition-colors hover:text-ink"
+            >
+              ← Back
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile why-card below the flow */}
+      <div className="mt-5 md:hidden">
+        <WhyCard />
       </div>
     </div>
   );

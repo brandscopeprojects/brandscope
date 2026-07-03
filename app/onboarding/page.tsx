@@ -46,8 +46,7 @@ export default async function OnboardingPage({
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-10 bg-base px-4 py-12">
-      <h1 className="font-display text-3xl font-bold text-ink">Brandscope</h1>
+    <main className="flex min-h-screen items-center justify-center bg-base px-4 py-10">
       <OnboardingWizard initialDomain={initialDomain} />
     </main>
   );

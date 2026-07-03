@@ -2,6 +2,7 @@ import Link from "next/link";
 
 // Index of design previews (populated with the RiversBet sample data). Public.
 const BRAND_PREVIEWS = [
+  { href: "/preview/onboarding", label: "Onboarding Wizard" },
   { href: "/preview/dashboard", label: "Dashboard" },
   { href: "/preview/market-intel", label: "Market Intelligence" },
   { href: "/preview/promotions", label: "Promotion Signals" },
