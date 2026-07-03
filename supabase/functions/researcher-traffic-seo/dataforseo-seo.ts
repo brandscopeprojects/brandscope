@@ -11,26 +11,12 @@
 //   dataforseo_labs/google/ranked_keywords/live           → competitor SERP positions + ranking URLs
 //   keywords_data/google_ads/search_volume/live           → search volume backfill for gap keywords
 
-import { dfsPost, firstResult } from "../_shared/dataforseo.ts";
+import { dfsPost, firstResult, locationCode } from "../_shared/dataforseo.ts";
 import type { KeywordGap, SerpPosition } from "./types.ts";
 
-// ── Location / language mapping (market code → DataForSEO location_code) ──────
-// DataForSEO Google location codes. Default Nigeria (the MVP launch market).
-const LOCATION_BY_MARKET: Record<string, number> = {
-  NG: 2566, // Nigeria
-  KE: 2404, // Kenya
-  ZA: 2710, // South Africa
-};
-const DEFAULT_LOCATION = 2566; // Nigeria
-
-/** Resolve the DataForSEO location_code for a brand's market list (first known wins). */
-export function locationCode(markets: string[] | null | undefined): number {
-  for (const m of markets ?? []) {
-    const code = LOCATION_BY_MARKET[(m ?? "").toUpperCase()];
-    if (code) return code;
-  }
-  return DEFAULT_LOCATION;
-}
+// Location resolution lives in _shared/dataforseo.ts (MARKET_LOCATION, keyed by
+// brands.market values e.g. 'nigeria'). Re-exported for this function's index.ts.
+export { locationCode };
 
 const LANGUAGE = "en";
 

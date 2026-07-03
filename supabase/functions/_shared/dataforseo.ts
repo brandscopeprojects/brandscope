@@ -34,6 +34,69 @@ export async function dfsGet<T = unknown>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+// ── Market → DataForSEO Google location_code ─────────────────────────────────
+// Keys are brands.market values (lib/onboarding/constants.ts MARKETS — keep in
+// sync). Codes are Google geotarget country criteria IDs (2000 + ISO 3166-1
+// numeric). Default Nigeria (the launch market) when no market is recognised.
+export const MARKET_LOCATION: Record<string, number> = {
+  // West Africa
+  nigeria: 2566,
+  ghana: 2288,
+  senegal: 2686,
+  cote_divoire: 2384,
+  benin: 2204,
+  burkina_faso: 2854,
+  mali: 2466,
+  niger: 2562,
+  togo: 2768,
+  sierra_leone: 2694,
+  liberia: 2430,
+  gambia: 2270,
+  guinea: 2324,
+  cape_verde: 2132,
+  // East Africa
+  kenya: 2404,
+  uganda: 2800,
+  tanzania: 2834,
+  rwanda: 2646,
+  burundi: 2108,
+  ethiopia: 2231,
+  // Southern Africa
+  south_africa: 2710,
+  zambia: 2894,
+  zimbabwe: 2716,
+  malawi: 2454,
+  mozambique: 2508,
+  botswana: 2072,
+  namibia: 2516,
+  lesotho: 2426,
+  eswatini: 2748,
+  angola: 2024,
+  // Central Africa
+  cameroon: 2120,
+  dr_congo: 2180,
+  congo_republic: 2178,
+  gabon: 2266,
+  chad: 2148,
+  // Indian Ocean
+  mauritius: 2480,
+  madagascar: 2450,
+  seychelles: 2690,
+  // North Africa
+  morocco: 2504,
+  tunisia: 2788,
+};
+export const DEFAULT_LOCATION = 2566; // Nigeria
+
+/** Resolve the DataForSEO location_code for a brand's market list (first known wins). */
+export function locationCode(markets: string[] | null | undefined): number {
+  for (const m of markets ?? []) {
+    const code = MARKET_LOCATION[(m ?? "").toLowerCase().trim()];
+    if (code) return code;
+  }
+  return DEFAULT_LOCATION;
+}
+
 /** First result array from a live endpoint response (tasks[0].result). */
 export function firstResult<T = unknown>(body: { tasks?: Array<{ result?: T[] }> }): T[] {
   return body.tasks?.[0]?.result ?? [];

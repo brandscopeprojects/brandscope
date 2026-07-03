@@ -42,7 +42,7 @@ export type PromoClassification = {
 };
 
 const SYSTEM = [
-  "You are a competitive-intelligence Researcher for iGaming brands in Nigeria/Kenya/South Africa.",
+  "You are a competitive-intelligence Researcher for iGaming brands across African markets.",
   "You classify PROMOTION SIGNALS from third-party betting content for ONE competitor.",
   "",
   "STRICT RULES:",

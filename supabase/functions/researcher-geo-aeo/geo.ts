@@ -66,16 +66,19 @@ function injectPlaceholders(template: string, brandName: string, market: string)
 }
 
 export function humanMarket(market: string): string {
-  switch (market) {
-    case "nigeria":
-      return "Nigeria";
-    case "kenya":
-      return "Kenya";
-    case "south_africa":
-      return "South Africa";
-    default:
-      return market;
-  }
+  // Irregular display names first; everything else title-cases from snake_case
+  // (markets list: lib/onboarding/constants.ts MARKETS).
+  const irregular: Record<string, string> = {
+    cote_divoire: "Côte d'Ivoire",
+    dr_congo: "DR Congo",
+  };
+  const hit = irregular[market];
+  if (hit) return hit;
+  return market
+    .split("_")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
 }
 
 /**

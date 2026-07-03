@@ -13,26 +13,12 @@
 //   dataforseo_labs/google/domain_intersection/live       → audience overlap (shared-keyword proxy)
 //   dataforseo_labs/google/search_intent/live             → search-intent mix for the brand's keywords
 
-import { dfsPost, firstResult } from "../_shared/dataforseo.ts";
+import { dfsPost, firstResult, locationCode } from "../_shared/dataforseo.ts";
 
-// ── Location / language (market code → DataForSEO location_code) ─────────────
-// Mirrors researcher-traffic-seo's mapping. Default Nigeria (the MVP launch market).
-const LOCATION_BY_MARKET: Record<string, number> = {
-  NG: 2566, // Nigeria
-  KE: 2404, // Kenya
-  ZA: 2710, // South Africa
-};
-const DEFAULT_LOCATION = 2566; // Nigeria
+// Location resolution lives in _shared/dataforseo.ts (MARKET_LOCATION, keyed by
+// brands.market values e.g. 'nigeria'). Re-exported for this function's index.ts.
+export { locationCode };
 const LANGUAGE = "en";
-
-/** Resolve the DataForSEO location_code for a brand's market list (first known wins). */
-export function locationCode(markets: string[] | null | undefined): number {
-  for (const m of markets ?? []) {
-    const code = LOCATION_BY_MARKET[(m ?? "").toUpperCase()];
-    if (code) return code;
-  }
-  return DEFAULT_LOCATION;
-}
 
 // ── coercion helpers (tolerate strings / missing) ────────────────────────────
 function num(v: unknown): number | null {

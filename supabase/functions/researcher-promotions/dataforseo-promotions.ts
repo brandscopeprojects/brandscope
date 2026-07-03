@@ -14,24 +14,11 @@
 //
 // All responses tolerate missing fields — partial data is fine, fabrication is not.
 
-import { dfsPost, firstResult } from "../_shared/dataforseo.ts";
+import { dfsPost, firstResult, locationCode } from "../_shared/dataforseo.ts";
 
-// ── Location / language mapping (market code → DataForSEO location_code) ──────
-const LOCATION_BY_MARKET: Record<string, number> = {
-  NG: 2566, // Nigeria (MVP launch market)
-  KE: 2404, // Kenya
-  ZA: 2710, // South Africa
-};
-const DEFAULT_LOCATION = 2566; // Nigeria
-
-/** Resolve the DataForSEO location_code for a brand's market list (first known wins). */
-export function locationCode(markets: string[] | null | undefined): number {
-  for (const m of markets ?? []) {
-    const code = LOCATION_BY_MARKET[(m ?? "").toUpperCase()];
-    if (code) return code;
-  }
-  return DEFAULT_LOCATION;
-}
+// Location resolution lives in _shared/dataforseo.ts (MARKET_LOCATION, keyed by
+// brands.market values e.g. 'nigeria'). Re-exported for this function's index.ts.
+export { locationCode };
 
 const LANGUAGE = "en";
 
