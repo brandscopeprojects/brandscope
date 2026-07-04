@@ -225,18 +225,46 @@ export async function completeOnboarding(
     }
   }
 
-  // --- 3. create the first scan_jobs trigger row (Step 12) ---
-  // TODO(Sprint 3): the weekly cron / Supervisor picks up this 'pending' row and
-  // runs the scan pipeline. We do NOT invoke any Edge Function here.
-  const { error: scanErr } = await admin.from("scan_jobs").insert({
-    brand_id: brandId,
-    status: "pending",
-    triggered_by: "cron",
-    scan_week: mondayOfWeek(new Date()),
-    progress_percentage: 0,
-  });
-  if (scanErr) {
-    return { ok: false, error: `Failed to queue first scan: ${scanErr.message}` };
+  // --- 3. create the first scan_jobs trigger row and start the first scan ---
+  // The row is the durable trigger record (Monday's weekly-scan-trigger skips
+  // brands that already have a job for the current scan_week). The direct invoke
+  // below starts the pipeline NOW so the scanning screen's "2-3 minutes" promise
+  // holds — without it the row would sit pending forever (weekly cron only creates
+  // jobs for NEW scan weeks, so it would never pick this one up).
+  const { data: scanJob, error: scanErr } = await admin
+    .from("scan_jobs")
+    .insert({
+      brand_id: brandId,
+      status: "pending",
+      triggered_by: "cron",
+      scan_week: mondayOfWeek(new Date()),
+      progress_percentage: 0,
+    })
+    .select("id")
+    .single();
+  if (scanErr || !scanJob) {
+    return {
+      ok: false,
+      error: `Failed to queue first scan: ${scanErr?.message ?? "no row returned"}`,
+    };
+  }
+
+  // Kick brand-scan (Supervisor decompose). Best-effort: onboarding still succeeds
+  // if this fails — the job row stays pending and can be re-kicked from admin.
+  // brand-scan accepts the service-role bearer for server->function calls.
+  try {
+    await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/brand-scan`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ scan_job_id: scanJob.id, brand_id: brandId }),
+      signal: AbortSignal.timeout(15_000),
+      cache: "no-store",
+    });
+  } catch {
+    // swallow — see comment above
   }
 
   // --- 4. mark onboarding complete ---

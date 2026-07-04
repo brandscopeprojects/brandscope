@@ -1,6 +1,7 @@
 // brand-scan — Supervisor decompose step (agent-orchestration.md §"End-to-end
 // sequence" step 2). Invoked per pending job with `{ scan_job_id, brand_id }` and
-// `Authorization: Bearer ${CRON_SECRET}`. Loads the brand's context, computes its
+// `Authorization: Bearer ${CRON_SECRET}` (cron/orchestrator) or the service-role
+// key (Next.js server action kicking the first scan after onboarding). Loads the brand's context, computes its
 // enabled modules, records the expected fan-out on scan_jobs, transitions the job
 // to `running`, then for each module both enqueues a durable scan_modules message
 // AND directly invokes the researcher function (researchers process from the POST
@@ -9,6 +10,7 @@
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
+import { SERVICE_ROLE_KEY } from "../_shared/env.ts";
 import {
   enabledModules,
   setScanStatus,
@@ -20,7 +22,14 @@ import { MODULE_FUNCTION, type CompetitorRef, type ScanModuleMessage } from "../
 Deno.serve(async (req) => {
   const pf = preflight(req);
   if (pf) return pf;
-  if (!isAuthorizedInternal(req)) return json({ error: "unauthorized" }, 401);
+  // Internal callers send CRON_SECRET (cron/orchestrator); the Next.js server
+  // action (first scan after onboarding) sends the service-role key instead
+  // (docs/env-vars.md: the app holds the service-role key, not CRON_SECRET).
+  const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const fromServer = bearer.length > 0 && bearer === SERVICE_ROLE_KEY();
+  if (!isAuthorizedInternal(req) && !fromServer) {
+    return json({ error: "unauthorized" }, 401);
+  }
 
   const sb = serviceClient();
 
