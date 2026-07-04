@@ -16,8 +16,7 @@ import {
   SCAN_FREQUENCIES,
   type ScanFrequency,
 } from "@/app/(app)/admin/settings/constants";
-import { MARKETS, MARKET_REGIONS } from "@/lib/onboarding/constants";
-import { AdminSettingsMarketChips } from "./AdminSettingsMarketChips";
+import { MarketCombobox } from "@/components/onboarding/MarketCombobox";
 
 type AdminSettingsFormProps = {
   initial: {
@@ -202,19 +201,10 @@ export function AdminSettingsForm({ initial }: AdminSettingsFormProps) {
         </Field>
 
         <div className="space-y-3">
-          <span className="text-sm font-medium text-ink-secondary">Markets</span>
-          {MARKET_REGIONS.map((region) => (
-            <div key={region}>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-ink-faint">
-                {region}
-              </p>
-              <AdminSettingsMarketChips
-                options={MARKETS.filter((m) => m.region === region)}
-                selected={markets}
-                onToggle={toggleMarket}
-              />
-            </div>
-          ))}
+          <span className="text-sm font-medium text-ink-secondary">
+            Markets — anywhere in the world
+          </span>
+          <MarketCombobox selected={markets} onToggle={toggleMarket} />
         </div>
 
         <div className="flex flex-wrap items-center gap-3 pt-1">

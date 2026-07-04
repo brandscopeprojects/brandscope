@@ -10,6 +10,7 @@
 // on desktop; stacked, labelled fields on mobile (ui-constraints §4 spacing,
 // whitespace over borders).
 
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AutoDetectInput } from "./AutoDetectInput";
 import { COMPETITOR_MAX, COMPETITOR_TIERS } from "@/lib/onboarding/constants";
 import type { CompetitorTier } from "@/lib/data/competitor-tier";
@@ -44,6 +45,10 @@ export function CompetitorList({
   onDetect,
 }: CompetitorListProps) {
   const atMax = competitors.length >= COMPETITOR_MAX;
+  const reduced = useReducedMotion();
+  const rowTransition = reduced
+    ? { duration: 0 }
+    : { type: "spring" as const, stiffness: 480, damping: 38 };
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -61,9 +66,15 @@ export function CompetitorList({
         <span aria-hidden />
       </div>
 
+      <AnimatePresence mode="popLayout" initial={false}>
       {competitors.map((c) => (
-        <div
+        <motion.div
           key={c.id}
+          layout
+          initial={{ opacity: 0, y: reduced ? 0 : 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, scale: reduced ? 1 : 0.97, transition: { duration: reduced ? 0 : 0.12 } }}
+          transition={rowTransition}
           className={`grid grid-cols-1 gap-3 rounded-card bg-base-secondary/40 p-3 sm:items-center sm:gap-3 sm:bg-transparent sm:p-1 ${COLS}`}
         >
           {/* Domain + inline detect */}
@@ -123,8 +134,9 @@ export function CompetitorList({
           >
             Remove
           </button>
-        </div>
+        </motion.div>
       ))}
+      </AnimatePresence>
 
       <div className="mt-1 flex items-center justify-between">
         <button
