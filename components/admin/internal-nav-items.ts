@@ -3,6 +3,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
+  MessageSquare,
   Activity,
   Bot,
   Plug,
@@ -20,6 +21,7 @@ export type InternalNavItem = {
 };
 
 export const INTERNAL_NAV: InternalNavItem[] = [
+  { label: "HQ Chat", href: "/brandscope-admin/chat", icon: MessageSquare },
   { label: "System Health", href: "/brandscope-admin/health", icon: Activity },
   { label: "Agent Control", href: "/brandscope-admin/agents", icon: Bot },
   { label: "API Management", href: "/brandscope-admin/api-management", icon: Plug },

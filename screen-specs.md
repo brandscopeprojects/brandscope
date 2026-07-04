@@ -60,6 +60,7 @@ Resolves route drift between the screen doc and `docs/mvp-scope.md` (MVP wins):
 | 26 | API Management | `/brandscope-admin/api-management` | Internal admin | `api_health`, `model_router_config`, `api_cost_logs` | APIHealthCards, ModelRouterTable, CircuitBreakerPanel, CostAnalyticsChart |
 | 27 | Knowledge Base | `/brandscope-admin/knowledge-base` | Internal admin | `regulatory_documents`, `document_chunks`, `ingestion_logs` | DocumentTable, EmbeddingStatusBadge, DocumentPreviewPanel, ChunkViewer, IngestionPipeline |
 | 28 | Security Centre | `/brandscope-admin/security` | Internal admin (**Super Admin only**) | `active_sessions`, `failed_logins`, `audit_logs`, `rbac_config` | SecurityStatusStrip, SessionTable, FailedLoginsTable, RBACMatrix, AuditLog |
+| 29b | HQ Chat (Internal Ops Agent) | `/brandscope-admin/chat` | Internal admin | tool-calling reads (v2 agent, owner-approved 2026-07): `brands`, `subscriptions`, `payment_history`, `revenue_metrics`, `churn_events`, `agent_job_logs`, `scan_jobs`, `dead_letter_queue`, `cron_job_logs`, `feature_health_logs`, `profiles`, `active_sessions`, `failed_logins` | HqChat (ephemeral v1 — `chat_conversations` is brand-scoped) |
 | 29 | Revenue Dashboard | `/brandscope-admin/revenue` | Internal admin | `subscriptions`, `revenue_metrics`, `churn_events`, `cost_logs` | MetricCard, MRRTrendChart, BrandRevenueTable, ChurnRiskBadge, CohortGrid, CostRevenueChart |
 
 ## Mobile Screens & Interaction States

@@ -83,6 +83,19 @@ Acquisition/retention mechanics before feature depth; we have zero customers.
 6. **GEO citation-loss alert**: "competitor gained a citation for a query you
    previously appeared in" as a between-cycle alert type.
 
+## P2b — Founder HQ modules (owner-requested 2026-07-04)
+
+The internal HQ Agent (built: /brandscope-admin/chat, tool-calling v2) answers
+from brands/revenue/operations/agents/users TODAY. Three areas the founder needs
+have no data source yet — each becomes a new agent tool when built:
+
+1. **Marketing initiatives tracker** — Brandscope's own campaigns/channels/spend
+   (new internal table + admin CRUD). Agent tool: marketing_summary.
+2. **Customer support / CRM** — decide: integrate (shared inbox / HubSpot-class
+   tool) vs. minimal in-app support-tickets table. Agent tool: support_queue.
+3. **CMS** — Brandscope's own content/blog. Likely external platform at this
+   stage; revisit when content marketing starts. Agent tool: content_status.
+
 ## P3 — Smaller approved items
 
 - **Copy audit (defensive, ~1h):** never claim "rank on ChatGPT" anywhere —

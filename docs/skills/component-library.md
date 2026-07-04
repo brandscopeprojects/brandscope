@@ -134,6 +134,9 @@ render light-on-dark (white/white-tinted text), cobalt is the progress/own-brand
 ### `ChatFab` — `components/shell/ChatFab.tsx` (built 2026-07)
 - **Props:** `{ showOnMobile? }` — floating bottom-right cobalt FAB linking to `/chat`; hides itself on `/chat`. Owner decision 2026-07: chat must be reachable from ANYWHERE once a brand exists. Mounted in `AppShell` (hidden `< lg` there — BottomNav's Chat tab covers mobile) and on `/onboarding/scanning` with `showOnMobile` (no shell there). Safe-area-aware offset. Cannot appear during the wizard itself: no brand exists yet for chat to ground on.
 
+### `HqChat` — `components/admin/HqChat.tsx` (built 2026-07)
+- **Props:** none. Internal HQ Agent surface (screen 29b, registry #329): ephemeral chat calling `/api/hq-chat` — a Claude TOOL-CALLING loop (max 6 rounds) over read-only service-role tools in `lib/server/hq-agent.ts` (brands_overview, revenue_pnl, operations_status, agent_performance, user_growth). Internal_admin/super_admin gated at route level. Assistant replies show tool badges (evidence-first). Marketing/CRM/CMS have NO data source yet — the agent says so honestly (modules on docs/backlog.md). Model via router task `internal_hq_chat` (default Sonnet).
+
 ### `MobileActionCard` — `components/mobile/MobileActionCard.tsx`
 - **Props:** same as `ActionCard` but Accept/Dismiss 50/50 large buttons, confidence **dots**. Screens: 30, 31.
 
