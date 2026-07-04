@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { StatusPoller } from "@/components/onboarding/StatusPoller";
+import { ChatFab } from "@/components/shell/ChatFab";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,8 @@ export default async function ScanningPage() {
         initialStatus={initialStatus}
         initialProgress={initialProgress}
       />
+      {/* Brand exists from this point on — chat is reachable everywhere. */}
+      <ChatFab showOnMobile />
     </main>
   );
 }

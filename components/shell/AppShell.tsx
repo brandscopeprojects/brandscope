@@ -9,6 +9,7 @@ import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { NavSidebar } from "@/components/shell/NavSidebar";
 import { BottomNav } from "@/components/shell/BottomNav";
+import { ChatFab } from "@/components/shell/ChatFab";
 import { marketLabel } from "@/lib/format";
 
 export function AppShell({
@@ -73,6 +74,7 @@ export function AppShell({
       </div>
 
       <BottomNav />
+      <ChatFab />
     </div>
   );
 }

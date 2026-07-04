@@ -131,6 +131,9 @@ render light-on-dark (white/white-tinted text), cobalt is the progress/own-brand
 ### `BottomNav` — `components/shell/BottomNav.tsx` (built 2026-07)
 - **Props:** none — derives the active section (`dashboard | actions | intelligence | chat | admin`) from `usePathname()` so every page is covered without per-page wiring; intelligence lights up for any route in the nav-items Intelligence group. Fixed 5-item bar (Dashboard, Actions, Intelligence, Chat, Admin), visible `< lg` only (sidebar owns `lg+`); active = cobalt icon+label; ≥44px targets; safe-area inset padding for the iPhone home indicator. Mounted ONCE in `AppShell` (not per page); AppShell adds mobile bottom padding so content never hides behind the bar. Screens: all brand-facing screens on mobile, incl. Mobile Dashboard(30), Mobile Action Plan(31).
 
+### `ChatFab` — `components/shell/ChatFab.tsx` (built 2026-07)
+- **Props:** `{ showOnMobile? }` — floating bottom-right cobalt FAB linking to `/chat`; hides itself on `/chat`. Owner decision 2026-07: chat must be reachable from ANYWHERE once a brand exists. Mounted in `AppShell` (hidden `< lg` there — BottomNav's Chat tab covers mobile) and on `/onboarding/scanning` with `showOnMobile` (no shell there). Safe-area-aware offset. Cannot appear during the wizard itself: no brand exists yet for chat to ground on.
+
 ### `MobileActionCard` — `components/mobile/MobileActionCard.tsx`
 - **Props:** same as `ActionCard` but Accept/Dismiss 50/50 large buttons, confidence **dots**. Screens: 30, 31.
 
