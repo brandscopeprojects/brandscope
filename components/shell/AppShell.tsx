@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { NavSidebar } from "@/components/shell/NavSidebar";
+import { BottomNav } from "@/components/shell/BottomNav";
 import { marketLabel } from "@/lib/format";
 
 export function AppShell({
@@ -66,8 +67,12 @@ export function AppShell({
           </form>
         </header>
 
-        <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6 md:py-8">{children}</div>
+        <div className="mx-auto max-w-[1400px] px-4 py-6 pb-24 md:px-6 md:py-8 lg:pb-8">
+          {children}
+        </div>
       </div>
+
+      <BottomNav />
     </div>
   );
 }

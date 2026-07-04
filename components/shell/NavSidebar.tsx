@@ -39,7 +39,7 @@ export function NavSidebar({
         <span className="font-display text-lg font-bold text-ink">Brandscope</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-6">
+      <div className="flex-1 overflow-y-auto px-3 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         {NAV_GROUPS.map((group, gi) => (
           <div key={group.heading ?? `group-${gi}`} className="mt-4 first:mt-0">
             {group.heading && (
