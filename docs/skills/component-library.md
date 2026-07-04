@@ -83,8 +83,15 @@ Light theme **except** the scanning screen (Screen 2), which is the only dark sc
 render light-on-dark (white/white-tinted text), cobalt is the progress/own-brand accent.
 
 ### `OnboardingWizard` — `components/onboarding/OnboardingWizard.tsx`
-- **Props:** none (self-contained client wizard). Holds the 5-step state; submits via the `completeOnboarding` server action; auto-detects via the `detectBrand` server action; redirects to `/onboarding/scanning`.
-- **Composes:** `StepIndicator`, `TextInput`, `AutoDetectInput`, `MultiSelectChips`, `CompetitorList`, `PrimaryButton`.
+- **Props:** `{ initialDomain? }` (self-contained client wizard). TWO steps (owner-approved 2026-07): **1. Domain** (domain + auto-detected name) → Continue fires the setup agent (`suggestOnboarding`) and shows an **Analyzing interstitial** → **2. Confirm & Launch** (name, MarketCombobox with detected markets pre-selected, CompetitorList prefilled with agent suggestions incl. detected tier). Industry is NOT asked — silently `igaming` until more verticals exist. Submits via `completeOnboarding`; redirects to `/onboarding/scanning`. "Why we need this" panel appears on step 1 only.
+- **Composes:** `TextInput`, `AutoDetectInput`, `MarketCombobox`, `CompetitorList`, `PrimaryButton`.
+
+### `MarketCombobox` — `components/onboarding/MarketCombobox.tsx`
+- **Props:** `{ selected: string[], suggested?: string[], onToggle:(v)=>void, placeholder? }` — GLOBAL market multi-select (owner-approved 2026-07): selected markets as removable flag tokens (detected ones badged ✦), search-first ARIA combobox (`role=combobox`/listbox, arrow keys, Enter toggles, Esc closes), region-grouped browse list with sticky headers, mobile bottom-sheet presentation. Markets without regulatory corpus coverage (`REGULATORY_COVERED` in `lib/onboarding/countries.ts`) show a "Limited regulatory coverage" hint at selection time. Animations via `motion` (see Dependencies). Data source: `lib/onboarding/countries.ts` (single source of truth — full country list, flags, regions, DataForSEO location codes; the edge-function maps are GENERATED from it). Screens: Onboarding(1), Brand Admin Settings.
+- **Tokens:** card surface, divider, cobalt selected token, base-secondary unselected, ink scale.
+
+### Dependencies (owner-approved)
+- **`motion` (Framer Motion successor, `motion/react`) — approved 2026-07** for onboarding/admin micro-interactions only: token add/remove (`AnimatePresence` + `layout`), detected-suggestion staggered reveal, sheet/panel spring entrances. ALWAYS gate via `useReducedMotion()`. Do not spread it across the app without updating this file.
 - **Tokens:** card surface, divider, sh1, cobalt CTA, ink/ink-secondary. **Screen:** Onboarding(1).
 
 ### `StepIndicator` — `components/onboarding/StepIndicator.tsx`
@@ -96,7 +103,7 @@ render light-on-dark (white/white-tinted text), cobalt is the progress/own-brand
 ### `AutoDetectInput` — `components/onboarding/AutoDetectInput.tsx`
 - **Props:** `{ label?, value, onChange, onDetect:(v)=>Promise<void>, detecting?, buttonLabel? }` (+ input attrs) — domain field that fires `onDetect` on blur and via an inline "Detect Brand" button (cobalt outline). Used for brand domain (auto-fill name) and competitor domains (name+tier). **Screen:** Onboarding(1).
 
-### `MultiSelectChips` — `components/onboarding/MultiSelectChips.tsx`
+### `MultiSelectChips` — REMOVED 2026-07 (superseded by `MarketCombobox`; `MarketPicker` and `AdminSettingsMarketChips` removed with it)
 - **Props:** `{ options: {value,label}[], selected: string[], onToggle:(v)=>void }` — market pill chips; selected = solid cobalt fill, unselected = `base-secondary`. **Screen:** Onboarding(1, Step 2).
 
 ### `CompetitorList` — `components/onboarding/CompetitorList.tsx`

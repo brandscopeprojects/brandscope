@@ -12,7 +12,7 @@
 
 | # | Screen | Route | Auth | Primary data source(s) | Key components |
 |---|---|---|---|---|---|
-| 1 | Onboarding: Brand Setup | `/onboarding` | Unauth / new user, no brand | writes `brands`, `competitors` | StepIndicator, TextInput, MultiSelectChips, AutoDetectInput, CompetitorList, PrimaryButton |
+| 1 | Onboarding: Brand Setup | `/onboarding` | Unauth / new user, no brand | writes `brands`, `competitors` | OnboardingWizard (2 steps: Domain → Confirm & Launch, with an Analyzing interstitial while the setup agent runs), MarketCombobox, CompetitorList, AutoDetectInput, TextInput, PrimaryButton. Industry silently defaults to `igaming` (single-vertical MVP — no industry screen); markets are GLOBAL (all countries selectable; regulatory-coverage hint shown at selection time). |
 | 2 | Onboarding: Scanning State | `/onboarding/scanning` | Auth, brand configured | reads `scan_jobs` (poll 5s) | RadarAnimation, ProgressChecklist, ProgressBar, StatusPoller |
 | 3 | **Dashboard** | `/dashboard` | Auth, scan complete | `weekly_cache`, `brands`, `scan_jobs` | ScatterMap, RadarChart, SOVDonut, ThreatGauge, FilterChips, ActionCard, EvidenceDrawer, GenerateAssetButton |
 | 4 | Market Intelligence (no-brand) | `/market-intel` | Auth (brand or no-brand) | `market_intelligence_cache`, `competitors` | MarketPositionMap, StatStrip, TrendFeed, MarketEntryTable |
