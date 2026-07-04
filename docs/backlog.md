@@ -83,18 +83,42 @@ Acquisition/retention mechanics before feature depth; we have zero customers.
 6. **GEO citation-loss alert**: "competitor gained a citation for a query you
    previously appeared in" as a between-cycle alert type.
 
-## P2b — Founder HQ modules (owner-requested 2026-07-04)
+## P2b — Founder HQ / back-office (owner-requested 2026-07-04; upgraded after
+## the Backoffice advisory review)
 
 The internal HQ Agent (built: /brandscope-admin/chat, tool-calling v2) answers
-from brands/revenue/operations/agents/users TODAY. Three areas the founder needs
-have no data source yet — each becomes a new agent tool when built:
+from brands/revenue/operations/agents/users TODAY. Build order below; each new
+module becomes a new agent tool.
 
-1. **Marketing initiatives tracker** — Brandscope's own campaigns/channels/spend
+1. **Provider cost & usage attribution** *(top item — belongs right after
+   Gate 0: instrumentation only collects forward, every un-instrumented scan is
+   unit-economics data lost)*. Instrument the three shared API clients
+   (dataforseo/detectzestack/llm in supabase/functions/_shared) to write one row
+   per provider call: vendor, endpoint, brand_id, scan_job_id, module, status,
+   latency_ms, units, estimated_cost (per-endpoint price table, flagged as
+   estimate). Powers: the EXISTING API-health cards (api_health_logs, currently
+   writer-less), vendor cost breakdown, per-brand cost, margin report, and two
+   new HQ tools (cost_breakdown, vendor_failures). LLM calls are already fully
+   attributed via agent_job_logs (Rule 4) — this closes the non-LLM half.
+2. **HQ Chat quick wins:** one-click saved briefings (Daily Founder Briefing /
+   Weekly Ops / Monthly Margin — canned prompts over existing tools) +
+   "suggested action" line in answers (prompt tweak).
+3. **Per-brand consumption & margin report** (internal screen, after item 1 has
+   data): plan revenue vs attributed cost (LLM + providers), usage by module,
+   failed-job cost, margin %; company-wide rollup = unit-economics view.
+4. **Consumption alerts** (rides between-cycle monitor): brand cost > threshold,
+   margin < 50%, vendor failure-rate spike, 5x usage anomaly.
+5. **Marketing initiatives tracker** — Brandscope's own campaigns/channels/spend
    (new internal table + admin CRUD). Agent tool: marketing_summary.
-2. **Customer support / CRM** — decide: integrate (shared inbox / HubSpot-class
+6. **Customer support / CRM** — decide: integrate (shared inbox / HubSpot-class
    tool) vs. minimal in-app support-tickets table. Agent tool: support_queue.
-3. **CMS** — Brandscope's own content/blog. Likely external platform at this
+7. **CMS** — Brandscope's own content/blog. Likely external platform at this
    stage; revisit when content marketing starts. Agent tool: content_status.
+
+Rejected from the Backoffice advisory (revisit only at scale): credit ledger
+(flat-tier pricing has no credits), 23-screen chat/consumption sprawl (one chat
++ one report screen suffice), data warehouse / semantic metrics layer, HQ role
+tiers + Act mode (single-operator company; needs confirmation infra when hired).
 
 ## P3 — Smaller approved items
 
