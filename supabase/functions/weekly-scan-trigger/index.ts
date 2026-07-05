@@ -34,6 +34,29 @@ Deno.serve(async (req) => {
 
   const scanWeek = mondayOfWeek();
 
+  // Kill switch (Agent Control): supervisor paused → skip this cycle entirely.
+  try {
+    const { data: sup } = await sb
+      .from("agents")
+      .select("status")
+      .eq("name", "supervisor")
+      .maybeSingle();
+    if (sup?.status === "inactive") {
+      await logCronRun(sb, {
+        job_name: JOB_NAME,
+        schedule: SCHEDULE,
+        status: "completed",
+        started_at: startedAt,
+        completed_at: new Date().toISOString(),
+        duration_seconds: Math.round((Date.now() - t0) / 1000),
+        metadata: { paused: "supervisor kill switch", jobs_created: 0 },
+      });
+      return json({ ok: true, jobsCreated: 0, paused: true });
+    }
+  } catch (_e) {
+    // fail-safe: proceed
+  }
+
   try {
     // 2. Select all active brands.
     const { data: brands, error: brandsError } = await sb

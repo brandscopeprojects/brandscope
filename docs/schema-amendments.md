@@ -434,6 +434,28 @@ brand-scoped NOT NULL by design and belong to the customer product.
   agent never self-writes memory; 👎-feedback surfaces as *suggested* lessons
   the owner explicitly promotes.
 
+## D.7 Prompt-slot convention + editable agent config (owner-approved 2026-07-05)
+No schema change — conventions over existing columns (Agent Control editable
+console, backlog P2c):
+- `prompt_versions.agent_name` (free text) holds a SLOT KEY: `supervisor`,
+  `drafter`, `auditor`, or `researcher:<module>` (promotions, geo_aeo,
+  traffic_seo, customer, hiring, regulatory). The newest `status='active'` row's
+  `system_prompt` (fallback `prompt_text`) OVERRIDES the code template at
+  runtime (`_shared/prompts.ts loadPrompt`, 5-min cache, code template on any
+  error). Rows whose text starts "Code-defined:" are legacy pointers = absent.
+  Versioning: draft → active (previous active → stable; `rollback_from` links).
+- `model_router_config.temperature` / `max_tokens` are now CONSUMED by the Edge
+  Functions (`resolveRoute`): non-null values override the per-call code
+  defaults. Models locked to the approved list at the API layer.
+- `agents.status='inactive'` is now ENFORCED (kill switch): supervisor pauses
+  the scan (brand-scan 409 + weekly-scan-trigger skips), drafter/auditor pause
+  synthesis (job → partial), researcher pauses all modules.
+  `agents.config.disabled_modules text[]-in-jsonb` pauses individual modules
+  (filtered out of the fan-out; excluded from expected_modules). Fail-safe
+  everywhere: unreadable config → everything runs.
+- Sandbox runs log to `agent_job_logs` with `task_type='sandbox'` (never touch
+  cache tables); they power the "tested" warning on prompt activation.
+
 ---
 
 *This amendments file is authoritative over the original schema where they differ. Any further schema change must be appended here with sign-off.*

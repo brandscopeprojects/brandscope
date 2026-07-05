@@ -120,6 +120,8 @@ export type AgentView = {
   statusTone: StatusTone;
   currentVersion: string | null;
   skills: AgentSkillView[];
+  /** researcher only: module tasks paused via the kill switch (agents.config). */
+  disabledModules?: string[];
   /** Declared vs Observed configuration (null in demo mode). */
   config?: AgentConfigView | null;
 };
@@ -219,7 +221,7 @@ export const getAgentControlData = cache(
       supabase
         .from("agents")
         .select(
-          "id, name, display_name, description, model, status, current_version",
+          "id, name, display_name, description, model, status, current_version, config",
         )
         .order("display_name", { ascending: true }),
       supabase
@@ -280,6 +282,7 @@ export const getAgentControlData = cache(
         | "model"
         | "status"
         | "current_version"
+        | "config"
       >[]
     ).map((a) => ({
       id: a.id,
@@ -291,6 +294,10 @@ export const getAgentControlData = cache(
       statusTone: agentStatusTone(a.status),
       currentVersion: a.current_version,
       skills: skillsByAgent.get(a.id) ?? [],
+      disabledModules: (() => {
+        const cfg = (a as { config?: unknown }).config as { disabled_modules?: unknown } | null;
+        return Array.isArray(cfg?.disabled_modules) ? cfg.disabled_modules.map(String) : [];
+      })(),
       config: configByAgent.get(a.name) ?? null,
     }));
 

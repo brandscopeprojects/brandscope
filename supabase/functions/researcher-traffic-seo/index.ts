@@ -20,7 +20,8 @@ import { MODELS, type ScanModuleMessage, type CompetitorRef } from "../_shared/c
 import { completeModule, invokeFunction, enqueueSynthesis } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { loggedLlm, callClaude, parseJsonFromModel } from "../_shared/llm.ts";
-import { resolveModel } from "../_shared/router.ts";
+import { resolveRoute } from "../_shared/router.ts";
+import { loadPrompt } from "../_shared/prompts.ts";
 import { makeEvidence } from "../_shared/evidence.ts";
 import type { ContentGap, KeywordGap, SerpPosition } from "./types.ts";
 import {
@@ -34,6 +35,9 @@ import {
 } from "./dataforseo-seo.ts";
 
 const PROMPT_VERSION = "traffic_seo.v1";
+
+// Slot researcher:traffic_seo — DB-active prompt_versions row overrides this code default.
+export const TRAFFIC_SYSTEM = `You cluster SEO keywords into content topics for a competitive-intelligence tool. Given keywords a competitor ranks for that the brand does NOT, group them into 3-8 content topics. Respond ONLY with a JSON array of objects {"topic": string, "keywordCount": number}. No prose.`;
 // Bound concurrency so 10 competitors × 4 DataForSEO calls stay within the 90s budget.
 const MAX_CONCURRENCY = 4;
 
@@ -296,16 +300,17 @@ async function deriveContentGaps(
         data_quality_score: 1,
         input_snapshot: gapKeywords,
       },
-      async () =>
-        callClaude({
-          model: await resolveModel(sb, "researcher_structuring", MODELS.haiku),
+      async () => {
+        const route = await resolveRoute(sb, "researcher_structuring", {
+          model: MODELS.haiku,
           temperature: 0.1,
           maxTokens: 700,
-          system:
-            "You cluster SEO keywords into content topics for a competitive-intelligence tool. " +
-            "Given keywords a competitor ranks for that the brand does NOT, group them into 3-8 " +
-            "content topics. Respond ONLY with a JSON array of objects " +
-            '{"topic": string, "keywordCount": number}. No prose.',
+        });
+        return callClaude({
+          model: route.model,
+          temperature: route.temperature,
+          maxTokens: route.maxTokens,
+          system: await loadPrompt(sb, "researcher:traffic_seo", TRAFFIC_SYSTEM),
           messages: [
             {
               role: "user",
@@ -313,7 +318,8 @@ async function deriveContentGaps(
                 `Competitor: ${competitor.name}\nKeywords:\n` + gapKeywords.join("\n"),
             },
           ],
-        }),
+        });
+      },
     );
     const parsed = parseJsonFromModel<Array<{ topic?: unknown; keywordCount?: unknown }>>(r.text);
     if (!Array.isArray(parsed)) return [];

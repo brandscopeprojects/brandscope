@@ -5,7 +5,13 @@
 
 import type { SupabaseClient } from "./supabase.ts";
 
-type RouteRow = { task_type: string; primary_model: string; fallback_model: string | null };
+type RouteRow = {
+  task_type: string;
+  primary_model: string;
+  fallback_model: string | null;
+  temperature: number | null;
+  max_tokens: number | null;
+};
 
 let cache: Map<string, RouteRow> | null = null;
 let fetchedAt = 0;
@@ -16,7 +22,7 @@ async function loadRoutes(sb: SupabaseClient): Promise<Map<string, RouteRow>> {
   if (cache && now - fetchedAt < TTL_MS) return cache;
   const { data, error } = await sb
     .from("model_router_config")
-    .select("task_type, primary_model, fallback_model")
+    .select("task_type, primary_model, fallback_model, temperature, max_tokens")
     .eq("is_active", true);
   if (error) throw new Error(error.message);
   cache = new Map((data ?? []).map((r) => [r.task_type, r as RouteRow]));
@@ -39,5 +45,31 @@ export async function resolveModel(
     return routes.get(taskType)?.primary_model ?? codeDefault;
   } catch {
     return codeDefault;
+  }
+}
+
+export type ResolvedRoute = { model: string; temperature: number; maxTokens: number };
+
+/**
+ * Full route for `taskType`: model + temperature + maxTokens. Router columns
+ * override the code defaults ONLY when non-null; any error → all code defaults.
+ * This is what makes the Agent Control temperature slider real (P2c).
+ */
+export async function resolveRoute(
+  sb: SupabaseClient,
+  taskType: string,
+  codeDefaults: ResolvedRoute,
+): Promise<ResolvedRoute> {
+  try {
+    const routes = await loadRoutes(sb);
+    const r = routes.get(taskType);
+    if (!r) return codeDefaults;
+    return {
+      model: r.primary_model ?? codeDefaults.model,
+      temperature: r.temperature ?? codeDefaults.temperature,
+      maxTokens: r.max_tokens ?? codeDefaults.maxTokens,
+    };
+  } catch {
+    return codeDefaults;
   }
 }

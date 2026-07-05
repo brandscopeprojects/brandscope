@@ -17,14 +17,15 @@ import { MODELS, type ScanSynthesisMessage, type RecommendationEvidence } from "
 import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import { invokeFunction } from "../_shared/scan.ts";
-import { resolveModel } from "../_shared/router.ts";
+import { resolveRoute } from "../_shared/router.ts";
+import { loadPrompt, renderPrompt } from "../_shared/prompts.ts";
 import {
   PROMPT_VERSION,
   CONFIDENCE_FLOOR,
   levelFromScore,
   SUPERVISOR_SYSTEM,
   AUDITOR_SYSTEM,
-  drafterSystem,
+  DRAFTER_SYSTEM_TEMPLATE,
   type SynthesisBrief,
   type DraftRecommendation,
   type AuditVerdict,
@@ -71,6 +72,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const sb = serviceClient();
+
+  // Kill switch (Agent Control): drafter/auditor paused → no synthesis, job partial.
+  // Fail-safe: any read problem → proceed.
+  try {
+    const { data: gateRows } = await sb
+      .from("agents")
+      .select("name, status")
+      .in("name", ["drafter", "auditor"]);
+    const paused = (gateRows ?? []).filter((a) => a.status === "inactive").map((a) => a.name);
+    if (paused.length > 0) {
+      await sb
+        .from("scan_jobs")
+        .update({
+          status: "partial",
+          error_message: `synthesis paused by kill switch (${paused.join(", ")})`,
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", scan_job_id);
+      return json({ ok: false, error: "synthesis paused by kill switch", paused }, 409);
+    }
+  } catch (_e) {
+    // proceed
+  }
 
   try {
     // 1. Load brand context (defensively — missing caches are fine: partial scan).
@@ -279,13 +304,19 @@ async function runSupervisor(sb: SupabaseClient, logCtx: LogCtx, ctx: Ctx): Prom
     "Synthesise the cross-module competitive picture into the JSON brief.",
   ].join("\n");
 
-  const model = await resolveModel(sb, "synthesis", MODELS.sonnet);
+  const route = await resolveRoute(sb, "synthesis", {
+    model: MODELS.sonnet,
+    temperature: 0.3,
+    maxTokens: SUPERVISOR_MAX_TOKENS,
+  });
+  const system = await loadPrompt(sb, "supervisor", SUPERVISOR_SYSTEM);
   const res = await loggedLlm(sb, { ...logCtx, agent_name: "supervisor", input_snapshot: userMsg }, () =>
     callClaude({
-      model,
-      system: SUPERVISOR_SYSTEM,
+      model: route.model,
+      system,
       messages: [{ role: "user", content: userMsg }],
-      maxTokens: SUPERVISOR_MAX_TOKENS,
+      maxTokens: route.maxTokens,
+      temperature: route.temperature,
     }),
   );
 
@@ -315,7 +346,12 @@ async function runDrafter(
   ctx: Ctx,
   brief: SynthesisBrief,
 ): Promise<DraftRecommendation[]> {
-  const system = drafterSystem(ctx.prevHeadlines);
+  const prevList = ctx.prevHeadlines.length
+    ? ctx.prevHeadlines.map((h) => `- ${h}`).join("\n")
+    : "- (none)";
+  const system = renderPrompt(await loadPrompt(sb, "drafter", DRAFTER_SYSTEM_TEMPLATE), {
+    prev_headlines: prevList,
+  });
   const baseUser = [
     brandHeader(ctx),
     "",
@@ -330,7 +366,11 @@ async function runDrafter(
     "Produce 4–8 recommendations as a JSON array. Drop any that fail the Five-Question filter.",
   ].join("\n");
 
-  const model = await resolveModel(sb, "drafting", MODELS.sonnet);
+  const route = await resolveRoute(sb, "drafting", {
+    model: MODELS.sonnet,
+    temperature: 0.3,
+    maxTokens: DRAFTER_MAX_TOKENS,
+  });
   let valid: DraftRecommendation[] = [];
   for (let attempt = 0; attempt <= 2; attempt++) {
     const user =
@@ -343,10 +383,11 @@ async function runDrafter(
       { ...logCtx, agent_name: "drafter", retry_count: attempt, input_snapshot: attempt === 0 ? user : "(retry)" },
       () =>
         callClaude({
-          model,
+          model: route.model,
           system,
           messages: [{ role: "user", content: user }],
-          maxTokens: DRAFTER_MAX_TOKENS,
+          maxTokens: route.maxTokens,
+          temperature: route.temperature,
         }),
     );
 
@@ -421,7 +462,12 @@ async function runAuditor(
     ).slice(0, 6000),
   ].join("\n");
 
-  const model = await resolveModel(sb, "audit", MODELS.sonnet);
+  const route = await resolveRoute(sb, "audit", {
+    model: MODELS.sonnet,
+    temperature: 0.3,
+    maxTokens: AUDITOR_MAX_TOKENS,
+  });
+  const auditorSystem = await loadPrompt(sb, "auditor", AUDITOR_SYSTEM);
   let verdicts: AuditVerdict[] = [];
   for (let attempt = 0; attempt <= 1; attempt++) {
     const res = await loggedLlm(
@@ -429,10 +475,11 @@ async function runAuditor(
       { ...logCtx, agent_name: "auditor", retry_count: attempt, input_snapshot: attempt === 0 ? user : "(rewrite)" },
       () =>
         callClaude({
-          model,
-          system: AUDITOR_SYSTEM,
+          model: route.model,
+          system: auditorSystem,
           messages: [{ role: "user", content: user }],
-          maxTokens: AUDITOR_MAX_TOKENS,
+          maxTokens: route.maxTokens,
+          temperature: route.temperature,
         }),
     );
     try {

@@ -13,7 +13,8 @@
 
 import { MODELS } from "../_shared/contracts.ts";
 import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
-import { resolveModel } from "../_shared/router.ts";
+import { resolveRoute } from "../_shared/router.ts";
+import { loadPrompt } from "../_shared/prompts.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import type { JobPosting } from "./dataforseo-jobs.ts";
@@ -22,6 +23,9 @@ import { marketMeta } from "./dataforseo-jobs.ts";
 const PROMPT_VERSION = "hiring-classify-v1";
 
 // ── frontend-mirrored output shapes (lib/data/hiring-signals.ts) ─────────────
+// Slot researcher:hiring — DB-active prompt_versions row overrides this code default.
+export const HIRING_SYSTEM = `You are a competitive-intelligence analyst for iGaming brands in Nigeria, Kenya and South Africa. You read a competitor's OPEN JOB TITLES (titles, locations and dates only — you do NOT have full job descriptions) and infer strategic hiring signals. Be precise and never invent roles, descriptions, salaries or counts that are not in the data. Aggressive/expansionary hiring (many roles, new markets, senior leadership, paid-acquisition or product scaling) implies HIGH impact. Output ONLY JSON.`;
+
 export type HiringRole = {
   title: string;
   location: string | null;
@@ -108,14 +112,7 @@ export async function classifyHiring(
     )
     .join("\n");
 
-  const system =
-    "You are a competitive-intelligence analyst for iGaming brands in Nigeria, " +
-    "Kenya and South Africa. You read a competitor's OPEN JOB TITLES (titles, " +
-    "locations and dates only — you do NOT have full job descriptions) and infer " +
-    "strategic hiring signals. Be precise and never invent roles, descriptions, " +
-    "salaries or counts that are not in the data. Aggressive/expansionary hiring " +
-    "(many roles, new markets, senior leadership, paid-acquisition or product " +
-    "scaling) implies HIGH impact. Output ONLY JSON.";
+  const system = await loadPrompt(sb, "researcher:hiring", HIRING_SYSTEM);
 
   const instruction = [
     `Competitor: ${ctx.competitorName}`,
@@ -150,14 +147,20 @@ export async function classifyHiring(
         input_snapshot: { competitor: ctx.competitorName, postings: postings.length },
         // data_quality_score is set below once we know how much resolved.
       },
-      async () =>
-        callClaude({
-          model: await resolveModel(sb, "researcher_structuring", MODELS.haiku),
+      async () => {
+        const route = await resolveRoute(sb, "researcher_structuring", {
+          model: MODELS.haiku,
+          temperature: 0.2,
+          maxTokens: 1200,
+        });
+        return callClaude({
+          model: route.model,
           system,
           messages: [{ role: "user", content: instruction }],
-          maxTokens: 1200,
-          temperature: 0.2,
-        }),
+          maxTokens: route.maxTokens,
+          temperature: route.temperature,
+        });
+      },
     );
     parsed = parseJsonFromModel(res.text);
   } catch (_e) {

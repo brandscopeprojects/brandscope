@@ -8,9 +8,11 @@
 // design: editing happens only where safe write paths exist (router table;
 // kill switch and prompt versions arrive later in Phase A/B).
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AlertTriangle, ChevronDown } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown } from "lucide-react";
+import { APPROVED_MODELS } from "@/lib/agent-control-shared";
 import type { AgentConfigView } from "@/lib/data/internal-agents";
 
 // Local copies of the tiny formatters — lib/data/internal-agents is server-only
@@ -95,10 +97,7 @@ export function AgentConfigPanel({ config }: { config: AgentConfigView }) {
                   Declared
                 </p>
                 {declared.routerRules.map((r) => (
-                  <Row key={r.task} label={`model · ${r.task}`}>
-                    {r.primaryModel}
-                    {r.fallbackModel ? ` → ${r.fallbackModel}` : ""}
-                  </Row>
+                  <RouterRuleEditor key={r.task} rule={r} />
                 ))}
                 {declared.routerRules.length === 0 && (
                   <Row label="model">none (deterministic)</Row>
@@ -192,11 +191,126 @@ export function AgentConfigPanel({ config }: { config: AgentConfigView }) {
             <p className="pt-2 text-[10px] text-ink-faint">
               Declared values come from the live model router and a manifest generated
               from function source ({new Date(declared.manifestGeneratedAt).toLocaleDateString()}).
-              Read-only: code-tagged fields change via deploy; models via the router table.
+              Code-tagged fields change via deploy; model/temperature/max-tokens are LIVE edits (router picks them up within ~5 minutes).
             </p>
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Editable router rule (model picker locked to the approved list; bounded
+// temperature slider + max-tokens; null = code default). Live within ~5 min. ──
+function RouterRuleEditor({
+  rule,
+}: {
+  rule: { task: string; primaryModel: string; fallbackModel: string | null; temperature: number | null; maxTokens: number | null };
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [primary, setPrimary] = useState(rule.primaryModel);
+  const [temp, setTemp] = useState<number | null>(rule.temperature);
+  const [tokens, setTokens] = useState<number | null>(rule.maxTokens);
+  const [saved, setSaved] = useState(false);
+
+  const dirty =
+    primary !== rule.primaryModel || temp !== rule.temperature || tokens !== rule.maxTokens;
+
+  function save() {
+    start(async () => {
+      const res = await fetch("/api/agent-control/router", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task: rule.task,
+          primaryModel: primary,
+          temperature: temp,
+          maxTokens: tokens,
+        }),
+      });
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (data.ok) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2500);
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-1.5 border-b border-divider py-2 last:border-b-0">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-ink-faint">model · {rule.task}</span>
+        <select
+          value={primary}
+          onChange={(e) => setPrimary(e.target.value)}
+          aria-label={`Model for ${rule.task}`}
+          className="min-h-[32px] rounded-chip border border-divider bg-card px-2 py-1 font-mono text-[11px] text-ink outline-none focus:border-cobalt"
+        >
+          {APPROVED_MODELS.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-20 shrink-0 text-[11px] text-ink-faint">temperature</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={temp ?? 0.3}
+          onChange={(e) => setTemp(Number(e.target.value))}
+          aria-label={`Temperature for ${rule.task}`}
+          className="min-w-0 flex-1 accent-cobalt"
+        />
+        <span className="w-12 text-right font-mono text-[11px] text-ink">
+          {temp == null ? "code" : temp.toFixed(2)}
+        </span>
+        {temp != null && (
+          <button
+            type="button"
+            onClick={() => setTemp(null)}
+            className="text-[10px] text-ink-faint underline-offset-2 hover:underline"
+            title="Use the code default"
+          >
+            reset
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-20 shrink-0 text-[11px] text-ink-faint">max tokens</span>
+        <input
+          type="number"
+          min={100}
+          max={4000}
+          step={50}
+          value={tokens ?? ""}
+          placeholder="code default"
+          onChange={(e) => setTokens(e.target.value === "" ? null : Number(e.target.value))}
+          aria-label={`Max tokens for ${rule.task}`}
+          className="min-h-[32px] w-28 rounded-chip border border-divider bg-card px-2 py-1 font-mono text-[11px] text-ink outline-none placeholder:text-ink-faint focus:border-cobalt"
+        />
+        <span className="flex-1" />
+        {saved && (
+          <span className="flex items-center gap-1 text-[10px] font-medium text-opportunity">
+            <Check className="h-3 w-3" aria-hidden /> live in ≤5 min
+          </span>
+        )}
+        {dirty && (
+          <button
+            type="button"
+            onClick={save}
+            disabled={pending}
+            className="rounded-chip bg-cobalt px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {pending ? "Saving…" : "Save"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

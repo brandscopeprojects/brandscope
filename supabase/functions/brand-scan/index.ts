@@ -17,7 +17,7 @@ import {
   enqueueModule,
   invokeFunction,
 } from "../_shared/scan.ts";
-import { MODULE_FUNCTION, type CompetitorRef, type ScanModuleMessage } from "../_shared/contracts.ts";
+import { MODULE_FUNCTION, MVP_MODULES, type CompetitorRef, type ScanModuleMessage } from "../_shared/contracts.ts";
 
 Deno.serve(async (req) => {
   const pf = preflight(req);
@@ -129,8 +129,44 @@ Deno.serve(async (req) => {
       ];
     }
 
+    // Kill switches (Agent Control): supervisor pauses the whole scan; researcher
+    // can be paused wholesale or per module (agents.config.disabled_modules).
+    // Fail-safe: any read problem → everything runs.
+    let disabledModules: string[] = [];
+    try {
+      const { data: agentRows } = await sb.from("agents").select("name, status, config");
+      const byName = new Map((agentRows ?? []).map((a) => [a.name, a]));
+      if (byName.get("supervisor")?.status === "inactive") {
+        await setScanStatus(sb, scanJobId, "failed", {
+          error_message: "paused by supervisor kill switch",
+          completed_at: new Date().toISOString(),
+        });
+        return json({ ok: false, error: "paused by supervisor kill switch" }, 409);
+      }
+      const researcher = byName.get("researcher");
+      if (researcher?.status === "inactive") {
+        disabledModules = [...MVP_MODULES];
+      } else {
+        const cfg = (researcher?.config ?? {}) as { disabled_modules?: unknown };
+        if (Array.isArray(cfg.disabled_modules)) {
+          disabledModules = cfg.disabled_modules.map((m) => String(m));
+        }
+      }
+    } catch (_e) {
+      disabledModules = [];
+    }
+
     // 2. Compute enabled modules; record expected fan-out + transition to running.
-    const modules = enabledModules(prefs as Record<string, unknown> | null);
+    const modules = enabledModules(prefs as Record<string, unknown> | null).filter(
+      (m) => !disabledModules.includes(m),
+    );
+    if (modules.length === 0) {
+      await setScanStatus(sb, scanJobId, "partial", {
+        error_message: "all modules paused by kill switches",
+        completed_at: new Date().toISOString(),
+      });
+      return json({ ok: false, error: "all modules paused by kill switches" }, 409);
+    }
     await setScanStatus(sb, scanJobId, "running", {
       expected_modules: modules as string[],
       started_at: new Date().toISOString(),

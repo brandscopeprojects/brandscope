@@ -127,8 +127,13 @@ Today's Agent Control Centre is observability + a registry; the "control" is
 display-only (agents.is_active gates nothing; prompt versions are hardcoded in
 function source; the router lives on API Management). Approved plan:
 
-**Phase A** (config visibility can start pre-Gate 0 — read-only; the rest after
-the first successful scan):
+**Delivered 2026-07-05:** config visibility (A1) ✓ · kill switch incl. per-module (A2) ✓ ·
+editable model/temperature/max-tokens via router ✓ · DB prompt versions with
+draft→activate→rollback (Phase B item, pulled forward per owner) ✓ · red-team
+sandbox ✓. **Remaining:** escalation queue + retry (A3), trace inspector (A4),
+circuit breakers (A5), shadow mode, live flow view — post-Gate 0.
+
+**Phase A** (original list, for reference):
 1. **Config visibility: Declared vs Observed + drift badges.** Declared pulled
    from where each field is ENFORCED: model from model_router_config (live),
    prompt version/temperature/max_tokens/retries/budgets/endpoints extracted

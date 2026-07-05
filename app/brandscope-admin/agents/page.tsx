@@ -8,6 +8,8 @@
 import { PageHeader } from "@/components/intelligence/PageHeader";
 import { EmptyState } from "@/components/intelligence/EmptyState";
 import { AgentsRoster } from "@/components/admin/AgentsRoster";
+import { AgentPromptEditor } from "@/components/admin/AgentPromptEditor";
+import { AgentSandbox } from "@/components/admin/AgentSandbox";
 import { AgentsPromptVersions } from "@/components/admin/AgentsPromptVersions";
 import { AgentsJobTrace } from "@/components/admin/AgentsJobTrace";
 import { getAgentControlData } from "@/lib/data/internal-agents";
@@ -22,7 +24,7 @@ export default async function AgentControlCentrePage() {
     <div className="space-y-8">
       <PageHeader
         title="Agent Control Centre"
-        subtitle="The Brandscope agent fleet, their skills, prompt versions and recent job traces."
+        subtitle="Pause agents, tune models and temperatures, edit prompts with versioned rollback, and red-team them in the sandbox."
       />
 
       {agents.length === 0 ? (
@@ -34,6 +36,8 @@ export default async function AgentControlCentrePage() {
       ) : (
         <>
           <AgentsRoster agents={agents} />
+          <AgentPromptEditor />
+          <AgentSandbox />
           <AgentsPromptVersions promptVersions={promptVersions} />
           <AgentsJobTrace jobTrace={jobTrace} truncated={jobTraceTruncated} />
         </>

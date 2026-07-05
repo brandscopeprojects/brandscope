@@ -5,7 +5,8 @@
 
 import { MODELS } from "../_shared/contracts.ts";
 import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
-import { resolveModel } from "../_shared/router.ts";
+import { resolveRoute } from "../_shared/router.ts";
+import { loadPrompt } from "../_shared/prompts.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import type { CustomerInference } from "./types.ts";
@@ -18,27 +19,26 @@ import type {
 
 export const PROMPT_VERSION = "researcher-customer@v1";
 
-const SYSTEM = [
-  "You are the Customer-Intelligence Researcher for an iGaming competitive-intelligence",
-  "platform. You STRUCTURE DataForSEO signals into a strict JSON contract. You never",
-  "fabricate. Rules you must obey:",
-  "- traffic_sources: derive channel shares (0–100, summing to ~100) ONLY from the",
-  "  provided organic/paid traffic mix. If only organic+paid are known, output exactly",
-  "  those two channels (e.g. Organic Search, Paid Search). NEVER invent Social/Referral/",
-  "  Direct/Email shares — those are not in the data.",
-  "- complaint_themes: extract recurring complaint themes from the content mentions,",
-  "  with an integer count (how many mentions support the theme) and a sentiment in",
-  "  -1..1. Only themes actually evidenced by the snippets. Empty array if none.",
-  "- sentiment_score: a single overall sentiment in -1..1 reconciling the sentiment",
-  "  distribution and the mentions. null if there is no usable signal.",
-  "- sentiment_trend: one of 'improving' | 'declining' | 'stable' | null — a 12-week",
-  "  direction inferred only if the data supports it, else null.",
-  "- data_quality_score: your confidence 0..1 given how much real data you had.",
-  "Demographics and geographic distribution are Phase 2 and are handled outside your",
-  "output — do NOT produce age/gender/region percentages.",
-  "Output ONLY a JSON object: {traffic_sources, complaint_themes, sentiment_score,",
-  "sentiment_trend, data_quality_score}.",
-].join("\n");
+// Slot researcher:customer — DB-active prompt_versions row overrides this code default.
+export const CUSTOMER_SYSTEM = `You are the Customer-Intelligence Researcher for an iGaming competitive-intelligence
+platform. You STRUCTURE DataForSEO signals into a strict JSON contract. You never
+fabricate. Rules you must obey:
+- traffic_sources: derive channel shares (0–100, summing to ~100) ONLY from the
+  provided organic/paid traffic mix. If only organic+paid are known, output exactly
+  those two channels (e.g. Organic Search, Paid Search). NEVER invent Social/Referral/
+  Direct/Email shares — those are not in the data.
+- complaint_themes: extract recurring complaint themes from the content mentions,
+  with an integer count (how many mentions support the theme) and a sentiment in
+  -1..1. Only themes actually evidenced by the snippets. Empty array if none.
+- sentiment_score: a single overall sentiment in -1..1 reconciling the sentiment
+  distribution and the mentions. null if there is no usable signal.
+- sentiment_trend: one of 'improving' | 'declining' | 'stable' | null — a 12-week
+  direction inferred only if the data supports it, else null.
+- data_quality_score: your confidence 0..1 given how much real data you had.
+Demographics and geographic distribution are Phase 2 and are handled outside your
+output — do NOT produce age/gender/region percentages.
+Output ONLY a JSON object: {traffic_sources, complaint_themes, sentiment_score,
+sentiment_trend, data_quality_score}.`;
 
 /** Build the user prompt from the structured signals (mentions wrapped untrusted). */
 function buildPrompt(
@@ -101,14 +101,20 @@ export async function inferCustomerIntel(
       prompt_version: PROMPT_VERSION,
       input_snapshot: userPrompt,
     },
-    async () =>
-      callClaude({
-        model: await resolveModel(sb, "researcher_structuring", MODELS.haiku),
-        system: SYSTEM,
-        messages: [{ role: "user", content: userPrompt }],
-        maxTokens: 1200,
+    async () => {
+      const route = await resolveRoute(sb, "researcher_structuring", {
+        model: MODELS.haiku,
         temperature: 0.2,
-      }),
+        maxTokens: 1200,
+      });
+      return callClaude({
+        model: route.model,
+        system: await loadPrompt(sb, "researcher:customer", CUSTOMER_SYSTEM),
+        messages: [{ role: "user", content: userPrompt }],
+        maxTokens: route.maxTokens,
+        temperature: route.temperature,
+      });
+    },
   );
 
   return normalise(parseJsonFromModel<Partial<CustomerInference>>(res.text));

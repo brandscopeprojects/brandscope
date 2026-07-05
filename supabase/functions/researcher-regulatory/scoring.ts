@@ -12,7 +12,8 @@
 
 import { MODELS } from "../_shared/contracts.ts";
 import { loggedLlm, callClaude, parseJsonFromModel } from "../_shared/llm.ts";
-import { resolveModel } from "../_shared/router.ts";
+import { resolveRoute } from "../_shared/router.ts";
+import { loadPrompt } from "../_shared/prompts.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import { DIMENSIONS, type DimensionKey, type DimensionAssessment, type Violation } from "./types.ts";
@@ -46,16 +47,8 @@ const DEGRADED_ASSESSMENTS: DimensionAssessment[] = DIMENSIONS.map((d) => ({
   description: "Not assessed — regulatory corpus not yet ingested.",
 }));
 
-const SYSTEM_PROMPT = [
-  "You are Brandscope's Regulatory Compliance Researcher for iGaming brands in",
-  "Nigeria, Kenya, and South Africa. You assess a competitor's compliance against",
-  "regulator requirements using ONLY the provided regulator-document excerpts and",
-  "the competitor's own site text. You MUST cite a VERBATIM quote (copied exactly,",
-  "no paraphrase) and the document/section for any 'non_compliant' or 'partial'",
-  "finding. If the excerpts do not contain enough evidence to judge a dimension,",
-  "return status 'unknown' with quote null — NEVER guess, NEVER invent a quote,",
-  "url, or requirement. Output STRICT JSON only.",
-].join(" ");
+// Slot researcher:regulatory — DB-active prompt_versions row overrides this code default.
+export const REGULATORY_SYSTEM = `You are Brandscope's Regulatory Compliance Researcher for iGaming brands in Nigeria, Kenya, and South Africa. You assess a competitor's compliance against regulator requirements using ONLY the provided regulator-document excerpts and the competitor's own site text. You MUST cite a VERBATIM quote (copied exactly, no paraphrase) and the document/section for any 'non_compliant' or 'partial' finding. If the excerpts do not contain enough evidence to judge a dimension, return status 'unknown' with quote null — NEVER guess, NEVER invent a quote, url, or requirement. Output STRICT JSON only.`;
 
 /**
  * Assess all 6 dimensions for one competitor in one market. Retrieves chunks per
@@ -143,14 +136,20 @@ export async function assessCompetitor(
         prompt_version: PROMPT_VERSION,
         input_snapshot: `${params.competitorName} / ${params.market}`,
       },
-      async () =>
-        callClaude({
-          model: await resolveModel(sb, "regulatory_rag", MODELS.sonnet),
-          system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: userPrompt }],
-          maxTokens: 1800,
+      async () => {
+        const route = await resolveRoute(sb, "regulatory_rag", {
+          model: MODELS.sonnet,
           temperature: 0.1,
-        }),
+          maxTokens: 1800,
+        });
+        return callClaude({
+          model: route.model,
+          system: await loadPrompt(sb, "researcher:regulatory", REGULATORY_SYSTEM),
+          messages: [{ role: "user", content: userPrompt }],
+          maxTokens: route.maxTokens,
+          temperature: route.temperature,
+        });
+      },
     );
 
     const parsed = parseJsonFromModel<Array<Record<string, unknown>>>(res.text);
