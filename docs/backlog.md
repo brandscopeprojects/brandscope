@@ -120,6 +120,54 @@ Rejected from the Backoffice advisory (revisit only at scale): credit ledger
 + one report screen suffice), data warehouse / semantic metrics layer, HQ role
 tiers + Act mode (single-operator company; needs confirmation infra when hired).
 
+## P2c — Agent Control becomes real (owner-approved 2026-07-04; synthesis of
+## the two ACC blueprints, both reviewed)
+
+Today's Agent Control Centre is observability + a registry; the "control" is
+display-only (agents.is_active gates nothing; prompt versions are hardcoded in
+function source; the router lives on API Management). Approved plan:
+
+**Phase A** (config visibility can start pre-Gate 0 — read-only; the rest after
+the first successful scan):
+1. **Config visibility: Declared vs Observed + drift badges.** Declared pulled
+   from where each field is ENFORCED: model from model_router_config (live),
+   prompt version/temperature/max_tokens/retries/budgets/endpoints extracted
+   from function source via a generator script into a committed manifest (same
+   pattern as generate-market-maps — code stays the single source of truth),
+   schedule from pg_cron, module gating from brand_preferences. Observed from
+   agent_job_logs (model/prompt actually used, latency, cost, failure rate).
+   Badge any declared≠observed drift. Read-only except levers with safe write
+   paths. Kills the current three-sources-of-truth drift (seeded agents table
+   vs router vs code).
+2. **Kill switch:** enforce agents.is_active in brand-scan fan-out; paused
+   researcher → module marked skipped (not failed), synthesis still completes.
+   Fails safe: table unreachable → everything runs.
+3. **Escalation queue + retry:** DLQ browser on the screen with failure context
+   and a Retry button (permanent replacement for the ops-kick-scan shim).
+4. **Trace inspector:** per-scan timeline from agent_job_logs (module → calls →
+   tokens/cost/duration → expandable input/output snapshots).
+5. **Circuit breakers:** 3 consecutive failures per (agent|provider) within a
+   cycle trips for the remainder of that scan cycle; AUTO-RESET next cycle
+   (owner decision); owner override from the screen; wires the existing
+   ApiMgmtCircuitBreaker display to real state.
+
+**Phase B:** DB-driven prompt versions (fetch active from prompt_versions,
+5-min cache, hardcoded fallback — same fail-safe pattern as the model router;
+edit → v2 → activate → rollback, no redeploys) → shadow mode (run candidate
+prompt against the same production inputs non-persisting, human compares; a
+judge agent only when volume justifies it) → live scan flow view (brand-scan →
+8 researchers → synthesis rendered from real fan-out state).
+
+**Rejected from both ACC blueprints** (revisit at 50+ agents / first enterprise
+customer): Policy-as-Code engine + policy-group inheritance (git is the policy
+engine for 9 code-defined agents), canary releases (one scan/week has no
+traffic to slice), automated judge agents before a human has judged once,
+compliance/PII/red-team scores (no PII pipeline; a synthetic score violates the
+no-fake-data rule), HITL approval gates (hard MVP exclusion; agents never write
+externally), cryptographic signing of tool calls (append-only logs already
+answer who/what/when), policy enforcement module (default-deny is already
+enforced architecturally — fixed code paths, no dynamic tools).
+
 ## P3 — Smaller approved items
 
 - **Copy audit (defensive, ~1h):** never claim "rank on ChatGPT" anywhere —
