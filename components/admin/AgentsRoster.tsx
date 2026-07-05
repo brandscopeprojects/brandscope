@@ -5,6 +5,7 @@
 // Presentational. Tokens only.
 
 import { StatusPill } from "@/components/intelligence/StatusPill";
+import { AgentConfigPanel } from "./AgentConfigPanel";
 import type { AgentView } from "@/lib/data/internal-agents";
 
 export function AgentsRoster({ agents }: { agents: AgentView[] }) {
@@ -73,6 +74,8 @@ export function AgentsRoster({ agents }: { agents: AgentView[] }) {
                 </ul>
               )}
             </div>
+
+            {agent.config && <AgentConfigPanel config={agent.config} />}
           </article>
         ))}
       </div>

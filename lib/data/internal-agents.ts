@@ -70,6 +70,46 @@ export type AgentSkillView = {
   isActive: boolean;
 };
 
+// Declared config projected from function source by
+// scripts/generate-agent-manifest.mjs (backlog P2c Phase A item 1). Code is the
+// single source of truth; the manifest cannot drift from it.
+import agentManifest from "./agent-manifest.json";
+
+export type RouterRuleView = {
+  task: string;
+  primaryModel: string;
+  fallbackModel: string | null;
+  temperature: number | null;
+  maxTokens: number | null;
+};
+
+export type AgentConfigView = {
+  declared: {
+    promptVersions: string[];
+    temperatures: number[];
+    maxTokens: number[];
+    providers: string[];
+    dataforseoEndpoints: string[];
+    moduleBudgetMs: number | null;
+    retryDelaysMs: number[] | null;
+    schedule: string | null;
+    routerRules: RouterRuleView[];
+    gating: { column: string; disabledBrands: number }[];
+    functions: string[];
+    manifestGeneratedAt: string;
+  };
+  observed: {
+    runs: number;
+    failures: number;
+    avgDurationMs: number | null;
+    avgCostUsd: number | null;
+    lastModel: string | null;
+    lastPromptVersion: string | null;
+    lastRunAt: string | null;
+  } | null;
+  drift: string[];
+};
+
 export type AgentView = {
   id: string;
   name: string; // machine name (mono)
@@ -80,6 +120,8 @@ export type AgentView = {
   statusTone: StatusTone;
   currentVersion: string | null;
   skills: AgentSkillView[];
+  /** Declared vs Observed configuration (null in demo mode). */
+  config?: AgentConfigView | null;
 };
 
 export type PromptVersionView = {
@@ -170,6 +212,9 @@ export const getAgentControlData = cache(
       { data: skills },
       { data: logs },
       { data: prompts },
+      { data: routerRows },
+      { data: observedLogs },
+      { data: prefRows },
     ] = await Promise.all([
       supabase
         .from("agents")
@@ -192,7 +237,28 @@ export const getAgentControlData = cache(
         .from("prompt_versions")
         .select("id, agent_name, version, status, deployed_at, created_at")
         .order("deployed_at", { ascending: false, nullsFirst: false }),
+      supabase
+        .from("model_router_config")
+        .select("task_type, primary_model, fallback_model, temperature, max_tokens")
+        .eq("is_active", true),
+      supabase
+        .from("agent_job_logs")
+        .select("agent_name, model_used, prompt_version, duration_ms, cost_usd, status, created_at")
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .limit(500),
+      supabase
+        .from("brand_preferences")
+        .select(
+          "traffic_seo_enabled, geo_aeo_enabled, social_ads_enabled, product_intel_enabled, customer_intel_enabled, regulatory_enabled, promotions_enabled, hiring_signals_enabled",
+        )
+        .limit(1000),
     ]);
+
+    const configByAgent = buildAgentConfigs(
+      routerRows ?? [],
+      (observedLogs ?? []) as ObservedLogRow[],
+      (prefRows ?? []) as Record<string, boolean | null>[],
+    );
 
     const skillsByAgent = new Map<string, AgentSkillView[]>();
     for (const s of (skills ?? []) as Pick<
@@ -225,6 +291,7 @@ export const getAgentControlData = cache(
       statusTone: agentStatusTone(a.status),
       currentVersion: a.current_version,
       skills: skillsByAgent.get(a.id) ?? [],
+      config: configByAgent.get(a.name) ?? null,
     }));
 
     // Active prompt per agent. prompt_versions has no FK to agents; we key on
@@ -286,3 +353,141 @@ export const getAgentControlData = cache(
     };
   },
 );
+
+
+// ── Declared vs Observed config (backlog P2c Phase A item 1) ─────────────────
+
+type ObservedLogRow = {
+  agent_name: string;
+  model_used: string | null;
+  prompt_version: string | null;
+  duration_ms: number | null;
+  cost_usd: number | null;
+  status: string | null;
+  created_at: string | null;
+};
+
+type ManifestFn = {
+  promptVersions: string[];
+  temperatures: number[];
+  maxTokens: number[];
+  providers: string[];
+  dataforseoEndpoints: string[];
+  moduleBudgetMs: number | null;
+  retryDelaysMs: number[] | null;
+  routerTasks: { task: string; codeDefault: string }[];
+  gatingColumn: string | null;
+};
+type ManifestAgent = {
+  functions: string[];
+  schedule: string | null;
+  routerTasks: string[];
+  promptVersions: string[];
+};
+const MANIFEST_FUNCTIONS = agentManifest.functions as unknown as Record<string, ManifestFn>;
+const MANIFEST_AGENTS = agentManifest.agents as unknown as Record<string, ManifestAgent>;
+
+function buildAgentConfigs(
+  routerRows: {
+    task_type: string;
+    primary_model: string;
+    fallback_model: string | null;
+    temperature: number | null;
+    max_tokens: number | null;
+  }[],
+  logs: ObservedLogRow[],
+  prefRows: Record<string, boolean | null>[],
+): Map<string, AgentConfigView> {
+  const routerByTask = new Map(routerRows.map((r) => [r.task_type, r]));
+
+  // Count brands with each module explicitly disabled.
+  const disabledByColumn = new Map<string, number>();
+  for (const row of prefRows) {
+    for (const [col, val] of Object.entries(row)) {
+      if (val === false) disabledByColumn.set(col, (disabledByColumn.get(col) ?? 0) + 1);
+    }
+  }
+
+  const out = new Map<string, AgentConfigView>();
+  for (const [agentName, entry] of Object.entries(MANIFEST_AGENTS)) {
+    const fns = entry.functions
+      .map((f) => [f, MANIFEST_FUNCTIONS[f]] as const)
+      .filter(([, v]) => Boolean(v));
+
+    const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
+    const declared = {
+      promptVersions: entry.promptVersions,
+      temperatures: uniq(fns.flatMap(([, f]) => f.temperatures)).sort((a, b) => a - b),
+      maxTokens: uniq(fns.flatMap(([, f]) => f.maxTokens)).sort((a, b) => a - b),
+      providers: uniq(fns.flatMap(([, f]) => f.providers)),
+      dataforseoEndpoints: uniq(fns.flatMap(([, f]) => f.dataforseoEndpoints)),
+      moduleBudgetMs: fns.map(([, f]) => f.moduleBudgetMs).find((v) => v != null) ?? null,
+      retryDelaysMs: fns.map(([, f]) => f.retryDelaysMs).find((v) => v != null) ?? null,
+      schedule: entry.schedule,
+      routerRules: entry.routerTasks
+        .filter((t) => routerByTask.has(t))
+        .map((t) => {
+          const r = routerByTask.get(t)!;
+          return {
+            task: t,
+            primaryModel: r.primary_model,
+            fallbackModel: r.fallback_model,
+            temperature: r.temperature,
+            maxTokens: r.max_tokens,
+          };
+        }),
+      gating: fns
+        .map(([, f]) => f.gatingColumn)
+        .filter((c): c is string => Boolean(c))
+        .map((column) => ({ column, disabledBrands: disabledByColumn.get(column) ?? 0 })),
+      functions: entry.functions,
+      manifestGeneratedAt: agentManifest.generatedAt,
+    };
+
+    const mine = logs.filter((l) => l.agent_name === agentName);
+    let observed: AgentConfigView["observed"] = null;
+    if (mine.length > 0) {
+      const failures = mine.filter((l) => l.status === "failed").length;
+      const withDuration = mine.filter((l) => l.duration_ms != null);
+      const withCost = mine.filter((l) => l.cost_usd != null);
+      observed = {
+        runs: mine.length,
+        failures,
+        avgDurationMs: withDuration.length
+          ? Math.round(withDuration.reduce((a, l) => a + (l.duration_ms ?? 0), 0) / withDuration.length)
+          : null,
+        avgCostUsd: withCost.length
+          ? withCost.reduce((a, l) => a + Number(l.cost_usd ?? 0), 0) / withCost.length
+          : null,
+        lastModel: mine[0]?.model_used ?? null,
+        lastPromptVersion: mine[0]?.prompt_version ?? null,
+        lastRunAt: mine[0]?.created_at ?? null,
+      };
+    }
+
+    // Drift: reality disagreeing with declared config.
+    const drift: string[] = [];
+    if (observed?.lastModel) {
+      const declaredModels = new Set(
+        declared.routerRules.flatMap((r) => [r.primaryModel, r.fallbackModel]).filter(Boolean),
+      );
+      if (declaredModels.size > 0 && !declaredModels.has(observed.lastModel)) {
+        drift.push(
+          `Last run used ${observed.lastModel}, which is not in this agent's routed models.`,
+        );
+      }
+    }
+    if (
+      observed?.lastPromptVersion &&
+      declared.promptVersions.length > 0 &&
+      !declared.promptVersions.includes(observed.lastPromptVersion)
+    ) {
+      drift.push(
+        `Last run executed prompt "${observed.lastPromptVersion}", not in the declared set (deployed functions may be older than the repo).`,
+      );
+    }
+
+    out.set(agentName, { declared, observed, drift });
+  }
+  return out;
+}
