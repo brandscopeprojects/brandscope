@@ -1,6 +1,3 @@
-// Generated from the live Supabase schema. Do not edit by hand.
-// Regenerate via Supabase MCP generate_typescript_types after schema changes.
-
 export type Json =
   | string
   | number
@@ -1754,6 +1751,120 @@ export type Database = {
           },
         ]
       }
+      hq_agent_memory: {
+        Row: {
+          content: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          kind: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hq_agent_memory_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hq_conversations: {
+        Row: {
+          created_at: string
+          id: string
+          last_message_at: string
+          message_count: number
+          profile_id: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          message_count?: number
+          profile_id: string
+          title?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          message_count?: number
+          profile_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hq_conversations_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hq_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          feedback_note: string | null
+          id: string
+          model: string | null
+          reaction: string | null
+          role: string
+          tools_used: Json | null
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          feedback_note?: string | null
+          id?: string
+          model?: string | null
+          reaction?: string | null
+          role: string
+          tools_used?: Json | null
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          feedback_note?: string | null
+          id?: string
+          model?: string | null
+          reaction?: string | null
+          role?: string
+          tools_used?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hq_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "hq_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ingestion_logs: {
         Row: {
           created_at: string | null
@@ -2737,6 +2848,7 @@ export type Database = {
           created_at: string | null
           duration_seconds: number | null
           error_message: string | null
+          expected_modules: string[] | null
           failed_modules: string[] | null
           id: string
           partial_modules: string[] | null
@@ -2744,6 +2856,7 @@ export type Database = {
           scan_week: string
           started_at: string | null
           status: string
+          synthesis_enqueued: boolean
           total_cost_usd: number | null
           triggered_by: string | null
           updated_at: string | null
@@ -2755,6 +2868,7 @@ export type Database = {
           created_at?: string | null
           duration_seconds?: number | null
           error_message?: string | null
+          expected_modules?: string[] | null
           failed_modules?: string[] | null
           id?: string
           partial_modules?: string[] | null
@@ -2762,6 +2876,7 @@ export type Database = {
           scan_week: string
           started_at?: string | null
           status?: string
+          synthesis_enqueued?: boolean
           total_cost_usd?: number | null
           triggered_by?: string | null
           updated_at?: string | null
@@ -2773,6 +2888,7 @@ export type Database = {
           created_at?: string | null
           duration_seconds?: number | null
           error_message?: string | null
+          expected_modules?: string[] | null
           failed_modules?: string[] | null
           id?: string
           partial_modules?: string[] | null
@@ -2780,6 +2896,7 @@ export type Database = {
           scan_week?: string
           started_at?: string | null
           status?: string
+          synthesis_enqueued?: boolean
           total_cost_usd?: number | null
           triggered_by?: string | null
           updated_at?: string | null
@@ -3249,6 +3366,30 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      app_get_cron_secret: { Args: never; Returns: string }
+      app_pgmq_archive: {
+        Args: { p_msg_id: number; p_queue: string }
+        Returns: boolean
+      }
+      app_pgmq_read: {
+        Args: { p_qty: number; p_queue: string; p_vt: number }
+        Returns: {
+          message: Json
+          msg_id: number
+        }[]
+      }
+      app_pgmq_send: {
+        Args: { p_message: Json; p_queue: string }
+        Returns: number
+      }
+      app_scan_complete_module: {
+        Args: { p_outcome: string; p_scan_job_id: string; p_task: string }
+        Returns: boolean
+      }
+      app_trigger_function: {
+        Args: { p_body?: Json; p_name: string }
+        Returns: number
+      }
       get_user_brand_ids: { Args: never; Returns: string[] }
       get_user_organisation_id: { Args: never; Returns: string }
       provision_brand: {

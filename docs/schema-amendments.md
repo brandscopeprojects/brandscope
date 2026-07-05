@@ -414,6 +414,26 @@ Also adds: extensions `pgmq`/`pg_cron`/`pg_net`; queues `scan_modules` +
 every 6h) that POST to Edge Functions via `pg_net`, reading `project_url` +
 `cron_secret` from Vault (owner sets these at deploy).
 
+## D.6 HQ Chat persistence + agent memory (owner-approved 2026-07-04)
+Added in migration `16_hq_chat_persistence.sql`. The internal HQ Agent
+(/brandscope-admin/chat) gets durable threads and an owner-curated memory.
+All three tables are **Class-2 service-role-only** (RLS enabled, NO policies —
+internal console reads/writes go through role-gated API routes with the admin
+client). `chat_conversations`/`chat_messages` were NOT reused: they are
+brand-scoped NOT NULL by design and belong to the customer product.
+
+- `hq_conversations` — id, profile_id → profiles, title, message_count,
+  created_at, last_message_at.
+- `hq_messages` — id, conversation_id → hq_conversations (CASCADE), role
+  CHECK (user|assistant), content, tools_used jsonb, model, reaction
+  CHECK (up|down) NULL, feedback_note (owner's note on a 👎), created_at.
+- `hq_agent_memory` — id, kind CHECK (fact|preference|lesson), content,
+  created_by → profiles, is_active bool DEFAULT true, created_at. Active rows
+  are injected into the agent's system prompt ("approved memory"). Rule from
+  the Backoffice advisory: NOTHING enters memory without owner approval — the
+  agent never self-writes memory; 👎-feedback surfaces as *suggested* lessons
+  the owner explicitly promotes.
+
 ---
 
 *This amendments file is authoritative over the original schema where they differ. Any further schema change must be appended here with sign-off.*
