@@ -37,6 +37,69 @@ type AssetContent = {
   budget?: string;
 };
 
+// Per-type drafting spec. Every asset shares the same JSON shape
+// ({sections, channels?, budget?}) so the parser + UI are unchanged; only the
+// drafting INSTRUCTION differs per type. asset_type must match the
+// generated_assets CHECK constraint (schema). iGaming compliance rules
+// (no fabricated bonus figures; responsible-gambling awareness) apply to all.
+const ASSET_SPECS: Record<string, { label: string; instruction: string }> = {
+  campaign_brief: {
+    label: "Campaign brief",
+    instruction:
+      "an executable campaign brief. Sections must cover Objective, Key message, Target audience, and Execution steps. Populate channels[] and budget with a sensible split.",
+  },
+  ad_copy: {
+    label: "Ad copy",
+    instruction:
+      "paid ad copy. Produce 2–3 variants; make each variant a section labelled 'Variant A/B/C' whose body contains a headline, primary text (<=125 words) and a call-to-action. Populate channels[] with the ad platforms.",
+  },
+  email: {
+    label: "Email",
+    instruction:
+      "a marketing email. Sections: 'Subject line' (with 1 alternative), 'Preheader', 'Body' (skimmable, one clear CTA), 'CTA button'. channels[] = ['Email'].",
+  },
+  sms: {
+    label: "SMS",
+    instruction:
+      "SMS campaign copy. Produce 2 variants as sections 'Variant A/B', each <=160 characters, with the sender-compliant opt-out note. channels[] = ['SMS'].",
+  },
+  push_notification: {
+    label: "Push notification",
+    instruction:
+      "push-notification copy. 2 variants as sections; each body has a title (<=40 chars) and message (<=120 chars). channels[] = ['Push'].",
+  },
+  whatsapp: {
+    label: "WhatsApp message",
+    instruction:
+      "a WhatsApp broadcast message — conversational, compliant, one CTA link placeholder. Sections: 'Message', 'Follow-up'. channels[] = ['WhatsApp'].",
+  },
+  social_post: {
+    label: "Social post",
+    instruction:
+      "organic social posts. One section per platform (Instagram, X, Facebook) with caption + hashtags tailored to each. channels[] = the platforms.",
+  },
+  seo_brief: {
+    label: "SEO brief",
+    instruction:
+      "an SEO content brief. Sections: 'Target keywords', 'Working title', 'Outline (H2s)', 'Entities to cover', 'Meta description'. Omit budget.",
+  },
+  spend_memo: {
+    label: "Spend memo",
+    instruction:
+      "a marketing-spend reallocation memo. Sections: 'Recommendation', 'Where to shift spend', 'Rationale', 'Expected impact'. Use budget for the proposed split.",
+  },
+  team_brief: {
+    label: "Team brief",
+    instruction:
+      "an internal team action brief. Sections: 'What happened', 'Response', 'Owners & deadlines', 'Success metric'. Omit budget/channels.",
+  },
+  report: {
+    label: "Report",
+    instruction:
+      "a concise written report. Sections: 'Summary', 'What we found', 'Why it matters', 'Recommended next step'. Omit budget/channels.",
+  },
+};
+
 export async function POST(req: Request) {
   await requireUser();
 
@@ -54,6 +117,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "recommendationId is required." }, { status: 400 });
   }
   const assetType = typeof assetTypeRaw === "string" && assetTypeRaw ? assetTypeRaw : "campaign_brief";
+  if (!ASSET_SPECS[assetType]) {
+    return NextResponse.json(
+      { ok: false, error: `Unsupported asset type. Choose one of: ${Object.keys(ASSET_SPECS).join(", ")}.` },
+      { status: 400 },
+    );
+  }
 
   const brand = await getCurrentBrand();
   if (!brand) {
@@ -83,6 +152,7 @@ export async function POST(req: Request) {
     .select("*")
     .eq("recommendation_id", recommendationId)
     .eq("brand_id", brand.id)
+    .eq("asset_type", assetType)
     .eq("is_pre_generated", true)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
@@ -107,14 +177,17 @@ export async function POST(req: Request) {
   // --- Draft with Claude Sonnet 4.6 -------------------------------------------
   const evidenceText = summariseEvidence(rec.evidence);
   const markets = brand.market.join(", ");
+  const spec = ASSET_SPECS[assetType];
   const system =
     (markets
-      ? `You are a senior iGaming marketing strategist for a brand competing in ${markets}. `
-      : "You are a senior iGaming marketing strategist. ") +
-    "Draft an executable, compliant campaign brief responding to the competitive recommendation provided. " +
+      ? `You are a senior iGaming marketing strategist for the brand "${brand.name}" competing in ${markets}. `
+      : `You are a senior iGaming marketing strategist for the brand "${brand.name}". `) +
+    `Draft ${spec.instruction} ` +
+    "It must respond directly to the competitive recommendation provided and be executable as-is. " +
+    "Compliance is mandatory: never state exact competitor bonus amounts or wagering requirements, keep claims substantiable, and include a brief responsible-gambling note where a consumer-facing message invites play. " +
     "Respond with ONLY valid JSON of shape " +
     '{"sections":[{"label":string,"body":string}],"channels":string[],"budget":string}. ' +
-    "Sections should cover objective, key message, audience, and execution steps. No markdown, no prose outside the JSON.";
+    "Use channels[] and budget only where the asset type calls for them (omit or leave empty otherwise). No markdown, no prose outside the JSON.";
 
   const userPrompt =
     `Recommendation headline: ${rec.headline}\n` +
@@ -163,7 +236,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error }, { status });
   }
 
-  const title = deriveTitle(rec.headline);
+  const title = deriveTitle(`${spec.label}: ${rec.headline}`);
 
   // --- Persist (RLS user-session client) --------------------------------------
   const { data: inserted, error: insertError } = await supabase
