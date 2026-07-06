@@ -193,6 +193,36 @@ enforced architecturally — fixed code paths, no dynamic tools).
 - **Cost note for GEO economics:** Claude web-search API ≈ $10/1k searches on
   top of tokens; keep probe volume budgeted per plan tier.
 
+## P4 — Complex customer-facing utilities (owner-selected 2026-07-06)
+
+Grounded in surfaces that already exist but are half-wired. Approved to spec/build:
+
+1. **Counter-Move Engine** — from an alert or a recommendation, one tap produces a
+   multi-channel counter-campaign PACK (ad_copy + email + sms + social_post +
+   spend_memo…), each evidence-linked, moderation-gated, saved to
+   `generated_assets`. **DONE (foundation):** `/api/assets/generate` now emits all
+   11 asset types (commit bd5ab14). **Remaining:** real generate flow + type/pack
+   picker in the UI (GenerateAssetButton is still a stub → wire to the API), and an
+   alert→pack entry point. Reuses `generated_assets`, moderation gate, share_token.
+2. **Outcome Autopilot** — accepted recommendations auto-measure on the NEXT scan:
+   diff the relevant module metric (traffic/SOV/rating/promo) at accept-time vs
+   the following week, write an `action_outcomes` row automatically (positive/
+   neutral/negative), surface on the Performance page. Replaces the manual
+   `logOutcome()` form (app/(app)/action-plan/actions.ts) with an automatic loop
+   in cache-population / between-cycle-monitor. Closes the recommend→act→measure
+   loop — the product's retention spine.
+3. **"tryholo-style" agentic action (exploratory)** — the leap from *recommend* to
+   *act*: an agent that, on approval, executes the counter-move (schedule/send via
+   an integration) rather than only drafting it. GUARDRAIL: auto-publishing /
+   Deployer / HITL-exec are MVP hard exclusions — so V1 stays "draft + human
+   ships it"; true execution needs owner sign-off to lift the exclusion + a
+   delivery integration (email/WhatsApp/ads API). Log as a post-MVP capability.
+
+Related quick wins surfaced during exploration: brand chat has NO tool-calling
+(context-only) — a tool-calling brand chat (like the HQ agent) would let users
+ask "draft me an sms for this competitor move" in-thread; reports page is a stub
+(no PDF/export) — the Board Report Generator (P2b-adjacent) fills it.
+
 ## Explicitly rejected (from the external docs — do not build)
 
 Horizontal SEO-suite surface: site crawler, GSC/GA4 OAuth integrations,
