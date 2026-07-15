@@ -49,11 +49,14 @@ Deno.serve(async (req) => {
 
   const sb = serviceClient();
   const deadline = Date.now() + TIME_BUDGET_MS;
-  const markets = (msg.markets ?? [])
-    .map((m) => m.toLowerCase())
-    .filter((m) => SUPPORTED_MARKETS.has(m));
-  // Fall back to Nigeria (MVP launch market) if the brand has no supported market.
-  const effectiveMarkets = markets.length > 0 ? markets : ["nigeria"];
+  const requestedMarkets = (msg.markets ?? []).map((m) => m.toLowerCase());
+  // NO Nigeria fallback: scoring a brand from an unsupported market against
+  // Nigerian regulations fabricates a compliance verdict AND mis-tags the row as
+  // 'nigeria' (this is exactly what produced a false "nigeria" reading for a
+  // Uganda brand). We score ONLY markets whose corpus we actually have; if none
+  // are supported we write nothing and report the gap honestly below.
+  const effectiveMarkets = requestedMarkets.filter((m) => SUPPORTED_MARKETS.has(m));
+  const unsupportedMarkets = requestedMarkets.filter((m) => !SUPPORTED_MARKETS.has(m));
 
   try {
     let anyCorpus = false;
@@ -142,11 +145,14 @@ Deno.serve(async (req) => {
         feature_category: "regulatory",
         feature_name: "Regulatory Compliance",
         status: "degraded",
-        root_cause: anyCorpus
+        root_cause: effectiveMarkets.length === 0
+          ? `No regulatory corpus for the brand's market(s): ${unsupportedMarkets.join(", ") || "unknown"}. Supported at MVP: Nigeria, Kenya, South Africa.`
+          : anyCorpus
           ? "Some competitors/markets scored without sufficient regulator corpus or within time budget"
           : "regulatory corpus not yet ingested",
-        resolution_suggested:
-          "Ingest NBGC/BCLB/WCGRB source documents (Sprint 4, Step 36) so verbatim RAG can score all dimensions.",
+        resolution_suggested: effectiveMarkets.length === 0
+          ? `Ingest the regulator corpus for ${unsupportedMarkets.join(", ") || "the brand market"} to enable compliance scoring; until then regulatory is intentionally blank rather than scored against the wrong jurisdiction.`
+          : "Ingest NBGC/BCLB/WCGRB source documents (Sprint 4, Step 36) so verbatim RAG can score all dimensions.",
       });
     }
 
