@@ -3,11 +3,28 @@
 // { tasks: [ { result: [...] } ] }. Live endpoints return inline; task_post
 // endpoints require polling tasks_ready + task_get/{id}.
 
-import { requireEnv } from "./env.ts";
+import { requireEnv, optionalEnv } from "./env.ts";
 
 const BASE = "https://api.dataforseo.com/v3/";
 
+/**
+ * DataForSEO Basic auth from a SINGLE `DATAFORSEO_API_KEY` secret (owner
+ * decision 2026-07). The value may be provided in any of these forms and is
+ * normalised to a valid `Authorization` header here:
+ *   - "login:password"            → base64-encoded into a Basic token
+ *   - a base64 "login:password"   → used as the Basic token as-is
+ *   - a full "Basic <token>"      → used verbatim
+ * Falls back to legacy DATAFORSEO_LOGIN + DATAFORSEO_PASSWORD if the single key
+ * is not set, so existing deployments keep working.
+ */
 function authHeader(): string {
+  const key = optionalEnv("DATAFORSEO_API_KEY");
+  if (key) {
+    const v = key.trim();
+    if (/^Basic\s+/i.test(v)) return v;
+    if (v.includes(":")) return `Basic ${btoa(v)}`;
+    return `Basic ${v}`;
+  }
   const login = requireEnv("DATAFORSEO_LOGIN");
   const password = requireEnv("DATAFORSEO_PASSWORD");
   return `Basic ${btoa(`${login}:${password}`)}`;
