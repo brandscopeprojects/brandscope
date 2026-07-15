@@ -363,7 +363,14 @@ async function runDrafter(
     "Raw module intelligence (cite REAL source_url + extracted_text + timestamp from these rows):",
     buildModuleDigest(ctx),
     "",
-    "Produce 4–8 recommendations as a JSON array. Drop any that fail the Five-Question filter.",
+    // Force JSON-only output. This model does not support assistant prefill, so the
+    // instruction itself must be unambiguous — otherwise the Drafter sometimes
+    // "thinks out loud" in prose, burns the token budget, and returns nothing
+    // parseable (0 recs). Mirrors how the Supervisor/Auditor reliably emit JSON.
+    "OUTPUT FORMAT: respond with ONLY a JSON array of 4–8 recommendation objects. " +
+      "Your reply MUST start with '[' and end with ']'. Do NOT write any reasoning, " +
+      "preamble, explanation, or markdown code fences before or after the JSON. " +
+      "Drop any recommendation that fails the Five-Question filter.",
   ].join("\n");
 
   const route = await resolveRoute(sb, "drafting", {
@@ -385,14 +392,7 @@ async function runDrafter(
         callClaude({
           model: route.model,
           system,
-          // Prefill the assistant turn with "[" so Claude emits the JSON array
-          // directly. Without this it sometimes "thinks out loud" in prose, burns
-          // the whole token budget, and returns nothing parseable → 0 recs. We
-          // prepend the "[" back before parsing.
-          messages: [
-            { role: "user", content: user },
-            { role: "assistant", content: "[" },
-          ],
+          messages: [{ role: "user", content: user }],
           maxTokens: route.maxTokens,
           temperature: route.temperature,
         }),
@@ -400,7 +400,7 @@ async function runDrafter(
 
     let parsed: DraftRecommendation[] = [];
     try {
-      parsed = parseJsonFromModel<DraftRecommendation[]>("[" + res.text);
+      parsed = parseJsonFromModel<DraftRecommendation[]>(res.text);
     } catch {
       parsed = [];
     }
