@@ -16,18 +16,41 @@ import {
   type ScanSynthesisMessage,
 } from "./contracts.ts";
 
-/** Fire-and-forget invoke another Edge Function (orchestrator → worker). */
-export async function invokeFunction(name: string, payload: unknown): Promise<void> {
+/**
+ * Fire-and-forget invoke another Edge Function (orchestrator → worker).
+ *
+ * CRITICAL: this must NOT await the worker's response. Awaiting it serialised the
+ * whole pipeline into a single isolate — brand-scan `await`ed each researcher, the
+ * last researcher `await`ed synthesis (~139s), which `await`ed cache-population —
+ * so brand-scan stayed open for the entire chain and blew Supabase's ~150s isolate
+ * ceiling (504). We dispatch the POST and hand the in-flight promise to the runtime
+ * via `EdgeRuntime.waitUntil` so the caller returns immediately while the isolate
+ * stays alive long enough to deliver the request. The worker also drains its pgmq
+ * queue, so a dropped invoke is still recoverable via DLQ / the monitor.
+ */
+export function invokeFunction(name: string, payload: unknown): void {
   const base = requireEnv("SUPABASE_URL");
   const secret = requireEnv("CRON_SECRET");
-  await fetch(`${base}/functions/v1/${name}`, {
+  const inflight = fetch(`${base}/functions/v1/${name}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  }).catch(() => {
-    // fire-and-forget: the worker also drains its queue, so a dropped invoke is
-    // recoverable. Failures surface via DLQ / monitor.
-  });
+  })
+    .then((r) => {
+      // Drain/close the body so the connection can be released; we never read it.
+      void r.body?.cancel?.().catch(() => {});
+    })
+    .catch(() => {
+      // fire-and-forget: recoverable via the worker's own queue drain + DLQ.
+    });
+  // Keep the isolate alive past the handler's return until the POST is delivered.
+  // Falls through harmlessly off-runtime (local/test) — the promise still runs.
+  try {
+    (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } })
+      .EdgeRuntime?.waitUntil?.(inflight);
+  } catch {
+    // not on the Supabase edge runtime — nothing to hook into.
+  }
 }
 
 /** The modules enabled for a brand given its brand_preferences row. */
