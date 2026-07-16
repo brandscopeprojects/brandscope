@@ -22,6 +22,7 @@ import { MarketCombobox } from "./MarketCombobox";
 import { CompetitorList, type CompetitorEntry } from "./CompetitorList";
 import { PrimaryButton } from "./PrimaryButton";
 import { COMPETITOR_MAX } from "@/lib/onboarding/constants";
+import { marketFromDomain } from "@/lib/onboarding/countries";
 import {
   completeOnboarding,
   detectBrand,
@@ -245,6 +246,16 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
     suggestedForDomain.current = key;
     setSuggesting(true);
     setSuggestFailed(false);
+    // Deterministic first: a ccTLD IS the country (gsb.ug → Uganda). Applies
+    // instantly, no network, and survives any setup-agent failure. The agent's
+    // richer result below can add markets; the user's edits always win.
+    const tldMarket = marketFromDomain(domain);
+    if (tldMarket) {
+      setSuggestedMarkets((prev) => (prev.includes(tldMarket) ? prev : [tldMarket, ...prev]));
+      if (!marketsTouched.current) {
+        setMarkets((prev) => (prev.includes(tldMarket) ? prev : [...prev, tldMarket]));
+      }
+    }
     suggestOnboarding(domain)
       .then((s) => {
         setSuggestedMarkets(s.markets);

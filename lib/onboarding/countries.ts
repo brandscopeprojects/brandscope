@@ -312,3 +312,34 @@ export const COUNTRIES: readonly Country[] = RAW.map(([iso2, num, label, region]
 export const COUNTRY_BY_VALUE: ReadonlyMap<string, Country> = new Map(
   COUNTRIES.map((c) => [c.value, c]),
 );
+
+// ── Deterministic ccTLD → market detection ────────────────────────────────────
+// A domain's country-code TLD is authoritative geography (gsb.ug IS Uganda) and
+// needs no network call or model — it works even when the setup agent is down.
+// ccTLDs equal ISO2 lowercase except the exceptions mapped below.
+const CCTLD_EXCEPTIONS: Record<string, string> = {
+  uk: "GB", // .uk → United Kingdom (ISO2 GB)
+};
+
+const COUNTRY_BY_ISO2: ReadonlyMap<string, Country> = new Map(
+  COUNTRIES.map((c) => [c.iso2.toUpperCase(), c]),
+);
+
+/**
+ * Resolve a market slug from a domain's ccTLD (handles compound TLDs like
+ * co.ke / com.ng / co.za by reading the LAST label). Returns null for generic
+ * TLDs (.com/.io/…) or countries not in the market list.
+ */
+export function marketFromDomain(rawDomain: string): string | null {
+  const domain = (rawDomain ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .split("?")[0];
+  const tld = domain.split(".").filter(Boolean).pop() ?? "";
+  if (tld.length !== 2) return null; // generic TLDs are not geography
+  const iso2 = CCTLD_EXCEPTIONS[tld] ?? tld.toUpperCase();
+  return COUNTRY_BY_ISO2.get(iso2)?.value ?? null;
+}
