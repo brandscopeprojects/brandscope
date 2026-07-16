@@ -26,7 +26,10 @@ Deno.serve(async (req) => {
   // action (first scan after onboarding) sends the service-role key instead
   // (docs/env-vars.md: the app holds the service-role key, not CRON_SECRET).
   const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const fromServer = bearer.length > 0 && bearer === SERVICE_ROLE_KEY();
+  // App calls may carry the legacy service_role JWT (string match) OR a newer
+  // sb_secret key (validated live via isServiceBearer — string match is impossible).
+  const fromServer =
+    bearer.length > 0 && (bearer === SERVICE_ROLE_KEY() || (await isServiceBearer(bearer)));
   if (!isAuthorizedInternal(req) && !fromServer) {
     return json({ error: "unauthorized" }, 401);
   }
