@@ -21,6 +21,9 @@ import {
   FileText,
   MessageSquare,
   Settings,
+  Swords,
+  Bell,
+  CreditCard,
 } from "lucide-react";
 
 export type NavItem = {
@@ -64,7 +67,15 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    heading: null,
-    items: [{ label: "Settings", href: "/admin/settings", icon: Settings }],
+    // Named group (was a lone "Settings" link hidden below the scroll fold):
+    // brand config, competitor CRUD, alerts and billing must be discoverable —
+    // these hold everything the user entered at onboarding (brand/markets/rivals).
+    heading: "Admin",
+    items: [
+      { label: "Brand Settings", href: "/admin/settings", icon: Settings },
+      { label: "Competitors", href: "/admin/competitors", icon: Swords },
+      { label: "Alerts", href: "/admin/alerts", icon: Bell },
+      { label: "Billing", href: "/admin/billing", icon: CreditCard },
+    ],
   },
 ];

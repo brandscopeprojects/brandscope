@@ -232,6 +232,7 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
   // Setup agent (onboarding-suggest). User edits always win over late results.
   const [suggestedMarkets, setSuggestedMarkets] = useState<string[]>([]);
   const [suggesting, setSuggesting] = useState(false);
+  const [suggestFailed, setSuggestFailed] = useState(false);
   const [skippedAnalyzing, setSkippedAnalyzing] = useState(false);
   const [competitorsPrefilled, setCompetitorsPrefilled] = useState(false);
   const marketsTouched = useRef(false);
@@ -243,6 +244,7 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
     if (!key || suggestedForDomain.current === key) return;
     suggestedForDomain.current = key;
     setSuggesting(true);
+    setSuggestFailed(false);
     suggestOnboarding(domain)
       .then((s) => {
         setSuggestedMarkets(s.markets);
@@ -261,11 +263,23 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
           );
           setCompetitorsPrefilled(true);
         }
+        // Detection "succeeded" but found nothing usable → treat as a failure so
+        // the user is told loudly instead of silently facing empty fields.
+        if (s.markets.length === 0 && s.competitors.length === 0) {
+          setSuggestFailed(true);
+        }
       })
       .catch(() => {
-        // Best-effort: the wizard works fully manually.
+        // The wizard still works fully manually — but say so, don't fail silent.
+        setSuggestFailed(true);
       })
       .finally(() => setSuggesting(false));
+  }
+
+  /** Re-run auto-detection for the current domain (clears the once-per-domain latch). */
+  function retrySuggestion() {
+    suggestedForDomain.current = null;
+    runSuggestion(brandDomain);
   }
 
   // ---- handlers ----
@@ -504,6 +518,23 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
                     />
                   </div>
 
+                  {suggestFailed && (
+                    <div className="flex items-center justify-between gap-3 rounded-chip border border-watch/30 bg-watch/10 px-4 py-3 text-xs leading-relaxed text-ink-secondary">
+                      <span>
+                        We couldn&rsquo;t auto-detect your markets and competitors this
+                        time. Add them manually below, or try detection again.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={retrySuggestion}
+                        disabled={suggesting}
+                        className="shrink-0 rounded-chip border border-divider bg-card px-3 py-1.5 font-medium text-ink transition-colors hover:bg-base-secondary disabled:opacity-50"
+                      >
+                        {suggesting ? "Retrying…" : "Retry detection"}
+                      </button>
+                    </div>
+                  )}
+
                   <div className="flex flex-col gap-2.5">
                     <span className="text-sm font-medium text-ink-secondary">
                       Competitors{" "}
@@ -519,6 +550,17 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
                       onDetect={detectCompetitor}
                     />
                   </div>
+
+                  {competitors.filter((c) => c.domain.trim()).length > 0 &&
+                    competitors.filter((c) => c.domain.trim()).length < 3 && (
+                      <p className="text-xs leading-relaxed text-ink-faint">
+                        Tracking only{" "}
+                        {competitors.filter((c) => c.domain.trim()).length} competitor
+                        {competitors.filter((c) => c.domain.trim()).length === 1 ? "" : "s"}{" "}
+                        — adding 3–5 gives a much richer weekly action plan. You can
+                        also add more later in Admin → Competitors.
+                      </p>
+                    )}
 
                   <PrimaryButton onClick={submit} disabled={!canSubmit || pending}>
                     {pending ? "Setting up…" : "Start first scan →"}

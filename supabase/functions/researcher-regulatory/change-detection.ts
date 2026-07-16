@@ -68,7 +68,15 @@ export async function fetchRegulatoryNews(market: string): Promise<NewsItem[]> {
           datePublished: str(it.timestamp) ?? str(it.date),
         };
       })
-      .filter((x): x is NewsItem => x !== null);
+      .filter((x): x is NewsItem => x !== null)
+      // Freshness gate: "change detection" means CURRENT changes. Dated items
+      // older than 90 days are history, not a regulatory change signal; undated
+      // items are kept (regulator sites often omit dates) but capped by depth.
+      .filter((n) => {
+        if (!n.datePublished) return true;
+        const t = Date.parse(n.datePublished);
+        return Number.isNaN(t) || Date.now() - t <= 90 * 24 * 60 * 60 * 1000;
+      });
   } catch {
     return [];
   }

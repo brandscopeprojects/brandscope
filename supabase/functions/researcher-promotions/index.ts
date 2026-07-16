@@ -148,11 +148,21 @@ async function processCompetitor(
     fetchBonusKeywordVolume(competitor.name, competitor.domain, location),
   ]);
 
-  const mentions: ContentMention[] = mentionsR.status === "fulfilled" ? mentionsR.value : [];
-  const news: NewsItem[] = newsR.status === "fulfilled" ? newsR.value : [];
+  const allMentions: ContentMention[] = mentionsR.status === "fulfilled" ? mentionsR.value : [];
+  const allNews: NewsItem[] = newsR.status === "fulfilled" ? newsR.value : [];
   const volume = volumeR.status === "fulfilled"
     ? volumeR.value
     : { total: null, monthlyDeltaPct: null };
+
+  // FRESHNESS GATE: a promo signal is only actionable if it is CURRENT. A dated
+  // item older than the window must never become evidence for an "active
+  // campaign" recommendation (a 13-month-old rewards article once drove a
+  // "counter this now" rec). News MUST be dated and fresh; mentions keep
+  // undated items (content search is recency-ranked) but drop dated-stale ones.
+  const news = allNews.filter((n) => isFresh(n.timestamp, /*requireDate*/ true));
+  const mentions = allMentions.filter((m) => isFresh(m.timestamp, /*requireDate*/ false));
+  const staleNewsDropped = allNews.length - news.length;
+  const staleMentionsDropped = allMentions.length - mentions.length;
 
   // 2. Haiku classifies promo TYPE + TITLE + novelty (SIGNALS ONLY, no amounts).
   const cls: PromoClassification = await classifyPromo(
@@ -205,6 +215,12 @@ async function processCompetitor(
       data_quality_score: cls.dataQualityScore,
       mention_count: mentions.length,
       news_count: news.length,
+      // Freshness accounting — how many dated-stale items were excluded, and the
+      // real publication time of the item backing source_url (evidence honesty).
+      stale_news_dropped: staleNewsDropped,
+      stale_mentions_dropped: staleMentionsDropped,
+      evidence_published_at: news.find((n) => n.url === promoUrl)?.timestamp ??
+        mentions.find((m) => m.url === promoUrl)?.timestamp ?? null,
       bonus_keyword_volume_total: volume.total,
       bonus_keyword_monthly_delta_pct: volume.monthlyDeltaPct,
       mentions: mentions.slice(0, 10),
@@ -252,6 +268,18 @@ function pickUrl(news: NewsItem[], mentions: ContentMention[]): string | null {
   for (const n of news) if (n.url) return n.url;
   for (const m of mentions) if (m.url) return m.url;
   return null;
+}
+
+// Promo-signal freshness window. Dated items older than this never become
+// evidence. `requireDate` (news announcements) also drops undated items;
+// mentions keep undated ones (the content endpoint is recency-ranked).
+const FRESHNESS_DAYS = 60;
+
+function isFresh(timestamp: string | null | undefined, requireDate: boolean): boolean {
+  if (!timestamp) return !requireDate;
+  const t = Date.parse(timestamp);
+  if (Number.isNaN(t)) return !requireDate;
+  return Date.now() - t <= FRESHNESS_DAYS * 24 * 60 * 60 * 1000;
 }
 
 function stripDomain(domain: string): string {

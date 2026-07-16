@@ -59,6 +59,7 @@ function brandLabel(domain: string): string {
 export type ContentMention = {
   text: string; // snippet / title (mention text — NOT an exact amount)
   url: string | null; // citation URL → source_url / promo_url candidate
+  timestamp: string | null; // content publication time (content_info.timestamp) — freshness gate
 };
 
 /**
@@ -103,7 +104,8 @@ export async function fetchBonusMentions(
       str(r.title) ??
       null;
     const url = str(r.url) ?? str(ci.url) ?? str(r.page_url) ?? null;
-    if (text || url) out.push({ text: text ?? "", url });
+    const timestamp = str(ci.timestamp) ?? str(main.timestamp) ?? str(r.timestamp) ?? null;
+    if (text || url) out.push({ text: text ?? "", url, timestamp });
   }
   return out;
 }

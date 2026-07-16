@@ -25,6 +25,10 @@ export const getCurrentBrand = cache(async function getCurrentBrand(): Promise<B
     .from("brands")
     .select("id, name, market, slug")
     .is("deleted_at", null)
+    // Deterministic pick if an org ever holds >1 brand row (e.g. re-onboarding):
+    // newest wins — otherwise limit(1) returns an arbitrary row and the dashboard
+    // can flip between brands across requests.
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   return data ?? null;

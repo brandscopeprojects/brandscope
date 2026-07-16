@@ -76,6 +76,11 @@ HARD RULES:
   cache rows: each evidence item needs a real source_url, the exact extracted_text
   quote, and the timestamp from that row. NEVER fabricate a URL, quote, or date.
 - If a claim has no supporting evidence row, DROP the recommendation entirely.
+- FRESHNESS: check every evidence timestamp against the scan date. Evidence older
+  than ~60 days must NEVER be presented as a current/active competitor move
+  ("is running", "this week", "launch a counter now"). If older evidence is
+  genuinely useful, frame it explicitly as historical context in trigger_reason;
+  otherwise DROP the recommendation.
 - Apply the Five-Question filter; keep a rec ONLY if ALL are true:
   1. Specific (names a competitor/metric/market, not generic advice).
   2. Evidence-backed (≥1 real evidence item).
@@ -104,6 +109,10 @@ Return ONLY a JSON array of objects of this TypeScript type:
 export const AUDITOR_SYSTEM = `You are the Auditor agent for Brandscope. You receive a JSON array of drafted
 recommendations (each with evidence). Score each one for confidence on the rubric:
 - Evidence traceability: does each evidence item have a real source_url + quote?
+- Evidence freshness: compare evidence timestamps to the scan date. A rec that
+  presents evidence older than ~60 days as a CURRENT/active competitor move is
+  misleading — set keep=false. Older evidence is acceptable only when the rec
+  explicitly frames it as historical context.
 - Logic quality: does the evidence actually support the headline/trigger_reason?
 - Specificity & actionability: is it concrete and doable this week?
 - Brand alignment: plausible for an iGaming brand in its stated operating market(s).
