@@ -282,6 +282,36 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
     runSuggestion(brandDomain);
   }
 
+  // Re-run competitor discovery scoped to the user's CONFIRMED markets
+  // (brand → country → competitors, in that order). Merges suggestions after the
+  // user's own non-empty rows, deduped by domain, capped at COMPETITOR_MAX.
+  const [marketSuggesting, setMarketSuggesting] = useState(false);
+  async function suggestForMarkets() {
+    if (markets.length === 0 || marketSuggesting) return;
+    setMarketSuggesting(true);
+    try {
+      const s = await suggestOnboarding(brandDomain, markets);
+      if (s.competitors.length > 0) {
+        setCompetitors((prev) => {
+          const kept = prev.filter((c) => c.domain.trim().length > 0);
+          const seen = new Set(kept.map((c) => c.domain.trim().toLowerCase()));
+          const added = s.competitors
+            .filter((c) => c.domain && !seen.has(c.domain.toLowerCase()))
+            .map((c) => ({ ...blankRow(), domain: c.domain, name: c.name, tier: c.tier }));
+          return [...kept, ...added].slice(0, COMPETITOR_MAX);
+        });
+        setCompetitorsPrefilled(true);
+        setSuggestFailed(false);
+      } else {
+        setSuggestFailed(true);
+      }
+    } catch {
+      setSuggestFailed(true);
+    } finally {
+      setMarketSuggesting(false);
+    }
+  }
+
   // ---- handlers ----
   async function detectBrandName(domain: string) {
     if (!domain.trim()) return;
@@ -536,12 +566,27 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
                   )}
 
                   <div className="flex flex-col gap-2.5">
-                    <span className="text-sm font-medium text-ink-secondary">
-                      Competitors{" "}
-                      <span className="font-normal text-ink-faint">
-                        (up to {COMPETITOR_MAX})
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-ink-secondary">
+                        Competitors{" "}
+                        <span className="font-normal text-ink-faint">
+                          (up to {COMPETITOR_MAX})
+                        </span>
                       </span>
-                    </span>
+                      <button
+                        type="button"
+                        onClick={suggestForMarkets}
+                        disabled={markets.length === 0 || marketSuggesting}
+                        title={
+                          markets.length === 0
+                            ? "Pick at least one market first"
+                            : "Suggest competitors operating in your selected markets"
+                        }
+                        className="shrink-0 rounded-chip border border-divider bg-card px-3 py-1.5 text-xs font-medium text-cobalt transition-colors hover:bg-base-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {marketSuggesting ? "Finding…" : "✦ Suggest for my markets"}
+                      </button>
+                    </div>
                     <CompetitorList
                       competitors={competitors}
                       onChange={patchCompetitor}

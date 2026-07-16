@@ -42,10 +42,20 @@ const VALID_TIERS = new Set(["dominant", "challenger", "mid_market", "niche"]);
  * the function accepts the service-role bearer for server→function calls.
  * Best-effort: any failure returns an empty suggestion and the wizard stays manual.
  */
-export async function suggestOnboarding(rawDomain: string): Promise<OnboardingSuggestion> {
+export async function suggestOnboarding(
+  rawDomain: string,
+  confirmedMarkets?: string[],
+): Promise<OnboardingSuggestion> {
   await requireUser();
   const domain = normaliseDomain(rawDomain);
   if (!domain) return EMPTY_SUGGESTION;
+
+  // When the user has confirmed markets in the wizard, competitor suggestion is
+  // re-run scoped to those markets (brand → country → competitors, in order).
+  const markets = (confirmedMarkets ?? [])
+    .map((m) => String(m).toLowerCase().trim())
+    .filter((m) => MARKET_VALUES.includes(m))
+    .slice(0, 10);
 
   try {
     const res = await fetch(
@@ -56,7 +66,7 @@ export async function suggestOnboarding(rawDomain: string): Promise<OnboardingSu
           Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ domain }),
+        body: JSON.stringify(markets.length > 0 ? { domain, markets } : { domain }),
         signal: AbortSignal.timeout(25_000),
         cache: "no-store",
       },
