@@ -15,7 +15,7 @@
 // holds the service-role key but not CRON_SECRET (docs/env-vars.md).
 
 import { serviceClient } from "../_shared/supabase.ts";
-import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
+import { json, preflight, isAuthorizedInternal, isServiceBearer } from "../_shared/http.ts";
 import { SERVICE_ROLE_KEY } from "../_shared/env.ts";
 import { MODELS } from "../_shared/contracts.ts";
 import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
@@ -351,7 +351,10 @@ Deno.serve(async (req) => {
   if (pf) return pf;
 
   const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const fromServer = bearer.length > 0 && bearer === SERVICE_ROLE_KEY();
+  // App calls may carry the legacy service_role JWT (string match) OR a newer
+  // sb_secret key (validated live via isServiceBearer — string match is impossible).
+  const fromServer =
+    bearer.length > 0 && (bearer === SERVICE_ROLE_KEY() || (await isServiceBearer(bearer)));
   if (!isAuthorizedInternal(req) && !fromServer) {
     return json({ error: "unauthorized" }, 401);
   }

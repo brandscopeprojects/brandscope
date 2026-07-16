@@ -9,7 +9,7 @@
 // researchers via completeModule when the fan-out finishes.
 
 import { serviceClient } from "../_shared/supabase.ts";
-import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
+import { json, preflight, isAuthorizedInternal, isServiceBearer } from "../_shared/http.ts";
 import { SERVICE_ROLE_KEY } from "../_shared/env.ts";
 import {
   enabledModules,
