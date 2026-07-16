@@ -374,20 +374,36 @@ Deno.serve(async (req) => {
     const watch_count = ordered.filter((r) => r.urgency === "watch").length;
     const opportunity_count = ordered.filter((r) => r.urgency === "opportunity").length;
 
+    // IDEMPOTENT (at-least-once delivery): synthesis can legitimately run twice for
+    // the same job (queue redelivery, reconciler re-fire). A plain INSERT here hit
+    // the (brand_id,scan_week) unique constraint on the second run and marked an
+    // otherwise-successful scan 'failed'. Upsert the plan, then REPLACE the week's
+    // recommendations so a re-run converges to the latest synthesis instead of erroring.
     const { data: plan, error: planErr } = await sb
       .from("action_plans")
-      .insert({
-        brand_id,
-        scan_week,
-        scan_job_id,
-        total_recommendations: ordered.length,
-        urgent_count,
-        watch_count,
-        opportunity_count,
-      })
+      .upsert(
+        {
+          brand_id,
+          scan_week,
+          scan_job_id,
+          total_recommendations: ordered.length,
+          urgent_count,
+          watch_count,
+          opportunity_count,
+        },
+        { onConflict: "brand_id,scan_week" },
+      )
       .select("id")
       .single();
-    if (planErr || !plan) throw new Error(`action_plans insert: ${planErr?.message ?? "missing"}`);
+    if (planErr || !plan) throw new Error(`action_plans upsert: ${planErr?.message ?? "missing"}`);
+
+    // Replace (not append) this week's recommendations for the brand.
+    const { error: delErr } = await sb
+      .from("recommendations")
+      .delete()
+      .eq("brand_id", brand_id)
+      .eq("scan_week", scan_week);
+    if (delErr) throw new Error(`recommendations replace-delete: ${delErr.message}`);
 
     let recommendationsInserted = 0;
     if (ordered.length > 0) {
