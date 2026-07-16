@@ -159,10 +159,21 @@ async function processCompetitor(
   // campaign" recommendation (a 13-month-old rewards article once drove a
   // "counter this now" rec). News MUST be dated and fresh; mentions keep
   // undated items (content search is recency-ranked) but drop dated-stale ones.
-  const news = allNews.filter((n) => isFresh(n.timestamp, /*requireDate*/ true));
-  const mentions = allMentions.filter((m) => isFresh(m.timestamp, /*requireDate*/ false));
-  const staleNewsDropped = allNews.length - news.length;
-  const staleMentionsDropped = allMentions.length - mentions.length;
+  const freshNews = allNews.filter((n) => isFresh(n.timestamp, /*requireDate*/ true));
+  const freshMentions = allMentions.filter((m) => isFresh(m.timestamp, /*requireDate*/ false));
+  const staleNewsDropped = allNews.length - freshNews.length;
+  const staleMentionsDropped = allMentions.length - freshMentions.length;
+
+  // ENTITY-RELEVANCE GATE: keyword search fuzzy-matches similar brand names
+  // (e.g. "Betvita" → BelVita biscuits), polluting evidence with off-topic
+  // content. Keep an item only if it names the competitor, links to its own
+  // site, or is clearly betting/gaming content.
+  const label = (competitor.name ?? "").trim() || stripDomain(competitor.domain);
+  const apex = stripDomain(competitor.domain).toLowerCase();
+  const news = freshNews.filter((n) => isRelevant(n.title, n.url, label, apex));
+  const mentions = freshMentions.filter((m) => isRelevant(m.text, m.url, label, apex));
+  const offtopicNewsDropped = freshNews.length - news.length;
+  const offtopicMentionsDropped = freshMentions.length - mentions.length;
 
   // 2. Haiku classifies promo TYPE + TITLE + novelty (SIGNALS ONLY, no amounts).
   const cls: PromoClassification = await classifyPromo(
@@ -219,6 +230,8 @@ async function processCompetitor(
       // real publication time of the item backing source_url (evidence honesty).
       stale_news_dropped: staleNewsDropped,
       stale_mentions_dropped: staleMentionsDropped,
+      offtopic_news_dropped: offtopicNewsDropped,
+      offtopic_mentions_dropped: offtopicMentionsDropped,
       evidence_published_at: news.find((n) => n.url === promoUrl)?.timestamp ??
         mentions.find((m) => m.url === promoUrl)?.timestamp ?? null,
       bonus_keyword_volume_total: volume.total,
@@ -280,6 +293,25 @@ function isFresh(timestamp: string | null | undefined, requireDate: boolean): bo
   const t = Date.parse(timestamp);
   if (Number.isNaN(t)) return !requireDate;
   return Date.now() - t <= FRESHNESS_DAYS * 24 * 60 * 60 * 1000;
+}
+
+// Betting/gaming context — \b keeps "bet" from matching inside "BelVita".
+const GAMING_CONTEXT =
+  /\b(bet|bets|betting|casino|gambl\w*|odds|wager\w*|punter\w*|bookmaker\w*|jackpot|stake\w*|free\s?bet|promo\s?code|sportsbook)\b/i;
+
+/** Item is about THIS competitor: names it, links to its site, or is gaming content. */
+function isRelevant(
+  text: string | null | undefined,
+  url: string | null | undefined,
+  label: string,
+  apexDomain: string,
+): boolean {
+  const t = (text ?? "").toLowerCase();
+  const u = (url ?? "").toLowerCase();
+  const l = label.toLowerCase();
+  if (l && (t.includes(l) || u.includes(l))) return true;
+  if (apexDomain && u.includes(apexDomain)) return true;
+  return GAMING_CONTEXT.test(t);
 }
 
 function stripDomain(domain: string): string {
