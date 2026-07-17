@@ -38,7 +38,9 @@ export type FeaturedSnippet = {
 
 export type GeoPlatform = {
   name: string;
-  mentioned: boolean;
+  /** true = mentioned; false = checked & not mentioned; null = NOT CHECKED this
+   *  scan (probe timed out / returned nothing) — must never render as "No". */
+  mentioned: boolean | null;
   position: number | null;
   sentiment: string | null;
   checkedAt: string | null;
@@ -87,7 +89,7 @@ export async function getGeoData(brand: BrandSummary): Promise<GeoData | null> {
 
   const platforms: GeoPlatform[] = PLATFORMS.map(({ name, prefix }) => ({
     name,
-    mentioned: (row[`${prefix}_mentioned`] as boolean | null) ?? false,
+    mentioned: (row[`${prefix}_mentioned`] as boolean | null) ?? null,
     position: (row[`${prefix}_position`] as number | null) ?? null,
     sentiment: (row[`${prefix}_sentiment`] as string | null) ?? null,
     checkedAt: (row[`${prefix}_checked_at`] as string | null) ?? null,

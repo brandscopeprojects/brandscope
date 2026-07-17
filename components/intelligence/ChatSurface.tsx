@@ -34,13 +34,18 @@ export function ChatSurface({
   const [error, setError] = useState<string | null>(null);
 
   // Whether to show the honest "assistant pending" notice. Set when the user
-  // sends a message; cleared whenever the active conversation or its server-
-  // rendered messages change (a new selection / a fresh load).
+  // sends a message; cleared when the server-rendered messages change (a fresh
+  // load delivered the reply).
   const [pendingNotice, setPendingNotice] = useState(false);
   useEffect(() => {
     setPendingNotice(false);
+  }, [messages]);
+  // Errors clear ONLY on conversation switch or the next send — clearing on
+  // `messages` identity change made a failed send's error flash and vanish on
+  // any re-render, so users saw silence instead of "assistant unavailable".
+  useEffect(() => {
     setError(null);
-  }, [activeConversationId, messages]);
+  }, [activeConversationId]);
 
   function selectConversation(id: string) {
     if (id === activeConversationId) return;

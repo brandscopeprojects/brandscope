@@ -131,6 +131,19 @@ export default async function TrafficSeoPage() {
 
       <StatStrip stats={stats} />
 
+      {withTraffic.length === 0 && competitors.length > 0 && (
+        // Honest coverage note (ui-constraints §14): rows exist but every metric is
+        // null — DataForSEO Labs has no ranked-keyword/traffic data for these
+        // domains yet (common for smaller country-specific betting sites). Dashes
+        // without an explanation read as "broken".
+        <div className="rounded-chip border border-watch/30 bg-watch/10 px-4 py-3 text-xs leading-relaxed text-ink-secondary">
+          DataForSEO has no ranked-keyword or traffic estimates for these competitor
+          domains yet — coverage for smaller country-specific domains typically
+          appears once they rank for enough tracked keywords. The scan checked every
+          competitor this week; the dashes are honest &ldquo;no data&rdquo;, not errors.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <SectionCard
           title="Competitor comparison"

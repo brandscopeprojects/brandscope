@@ -149,10 +149,12 @@ export async function POST(req: Request) {
     // return an honest error. We do NOT insert a fabricated assistant row.
     await bumpConversation(supabase, targetConversationId, priorCount + 1);
     const status = completion.reason === "not_configured" ? 503 : 502;
+    // Surface the upstream detail (e.g. "OpenAI returned 401.") — a bare
+    // "unavailable" hid a mis-pasted Vercel key for days.
     const error =
       completion.reason === "not_configured"
-        ? "Chat is not configured."
-        : "The assistant is unavailable right now. Please retry.";
+        ? "Chat is not configured (OPENAI_API_KEY missing on the server)."
+        : `The assistant is unavailable: ${completion.message} Check OPENAI_API_KEY in Vercel if this persists.`;
     return NextResponse.json({ ok: false, conversationId: targetConversationId, error }, { status });
   }
 

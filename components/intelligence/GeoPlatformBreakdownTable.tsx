@@ -43,10 +43,13 @@ const columns: Column<GeoPlatform>[] = [
     key: "mentioned",
     header: "Mentioned",
     cell: (p) =>
-      p.mentioned ? (
+      p.mentioned === true ? (
         <StatusPill label="Yes" tone="good" />
-      ) : (
+      ) : p.mentioned === false ? (
         <StatusPill label="No" tone="neutral" />
+      ) : (
+        // null = probe didn't complete this scan — honesty rule: never claim "No".
+        <StatusPill label="Not checked" tone="warn" />
       ),
   },
   {
