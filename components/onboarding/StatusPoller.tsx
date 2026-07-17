@@ -1,16 +1,15 @@
 "use client";
 
-// StatusPoller — polls scan_jobs status every 5s for the scanning screen (Screen 2).
-// Uses the BROWSER Supabase client (anon key); RLS scopes the read to the user's
-// brand, so we query by brand_id and trust RLS to enforce isolation.
-//   status 'completed' → redirect /dashboard
-//   status 'failed'    → surface Retry (onFailed)
-// Drives the visual scanning UI (RadarAnimation, ProgressChecklist, ProgressBar).
+// StatusPoller — REAL scan progress for the scanning screen (Screen 2).
+// Polls scan_jobs every 4s via the browser client (RLS scopes to the user's
+// brand) and renders the ACTUAL pipeline state: each intelligence module ticks
+// as it lands (completed_steps vs expected_modules), then the synthesis stage,
+// then redirect. No timed fake checklist — the wait IS the product demo
+// (docs/backlog.md P1-1), so every tick shown here really happened.
 //
-// NOTE (Sprint 3 dependency): the scan pipeline is NOT built yet, so the job stays
-// 'pending' indefinitely at MVP Sprint 2 — the UI shows the in-progress state and
-// the friendly "First scan takes 2–3 minutes…" copy. Polling is harmless until the
-// Sprint 3 cron flips the status.
+// Terminal states: 'completed' AND 'partial' both redirect — partial means the
+// action plan exists with some module gaps (the dashboard explains those
+// honestly). Only 'failed' stops with a retry.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -23,17 +22,18 @@ import {
 } from "./ProgressChecklist";
 import { PrimaryButton } from "./PrimaryButton";
 
-const POLL_INTERVAL_MS = 5000;
-const REVEAL_INTERVAL_MS = 800;
+const POLL_INTERVAL_MS = 4000;
 
-// Presentational checklist (the real per-module trace lands in Sprint 3).
-const CHECKLIST_LABELS = [
-  "Locking in your brand profile",
-  "Mapping your competitor set",
-  "Queuing GEO visibility across 4 AI platforms",
-  "Scheduling SEO & traffic intelligence",
-  "Scheduling regulatory compliance checks",
-  "Preparing your first action plan",
+// Canonical module order + human labels (mirror of MVP_MODULES).
+const MODULE_LABELS: Array<{ key: string; label: string }> = [
+  { key: "traffic_seo", label: "Traffic & SEO intelligence" },
+  { key: "geo_aeo", label: "AI visibility — ChatGPT, Claude, Gemini, Perplexity" },
+  { key: "tech_stack", label: "Technology & ad-network detection" },
+  { key: "app_store", label: "App-store presence" },
+  { key: "customer", label: "Customer intelligence" },
+  { key: "regulatory", label: "Regulatory compliance" },
+  { key: "promotions", label: "Promotion signals" },
+  { key: "hiring", label: "Hiring signals" },
 ];
 
 type ScanStatus = "pending" | "running" | "partial" | "completed" | "failed";
@@ -48,34 +48,34 @@ type StatusPollerProps = {
 export function StatusPoller({
   brandId,
   initialStatus,
-  initialProgress = 0,
 }: StatusPollerProps) {
   const router = useRouter();
   const [status, setStatus] = useState<ScanStatus>(initialStatus);
-  const [progress, setProgress] = useState<number>(initialProgress);
-  const [revealCount, setRevealCount] = useState(1);
+  const [expected, setExpected] = useState<string[]>([]);
+  const [done, setDone] = useState<string[]>([]);
   const redirected = useRef(false);
 
-  // Poll scan_jobs every 5s (RLS-scoped via the browser client).
+  // Poll the real job state every 4s (RLS-scoped via the browser client).
   useEffect(() => {
-    if (status === "completed" || status === "failed") return;
+    if (status === "completed" || status === "partial" || status === "failed") return;
     const supabase = createClient();
     let cancelled = false;
 
     async function poll() {
       const { data, error } = await supabase
         .from("scan_jobs")
-        .select("status, progress_percentage")
+        .select("status, expected_modules, completed_steps")
         .eq("brand_id", brandId)
         .order("created_at", { ascending: false })
         .limit(1)
-        .returns<{ status: string; progress_percentage: number | null }[]>();
+        .returns<
+          { status: string; expected_modules: string[] | null; completed_steps: string[] | null }[]
+        >();
       if (cancelled || error || !data || data.length === 0) return;
       const row = data[0];
       setStatus(row.status as ScanStatus);
-      if (typeof row.progress_percentage === "number") {
-        setProgress(row.progress_percentage);
-      }
+      setExpected(row.expected_modules ?? []);
+      setDone(row.completed_steps ?? []);
     }
 
     const id = setInterval(poll, POLL_INTERVAL_MS);
@@ -86,31 +86,47 @@ export function StatusPoller({
     };
   }, [brandId, status]);
 
-  // Sequentially reveal checklist items (~800ms) for the "alive" feel.
+  // Redirect on ANY terminal-with-plan state (completed or partial).
   useEffect(() => {
-    if (status === "completed" || status === "failed") return;
-    if (revealCount >= CHECKLIST_LABELS.length) return;
-    const id = setTimeout(
-      () => setRevealCount((n) => Math.min(n + 1, CHECKLIST_LABELS.length)),
-      REVEAL_INTERVAL_MS,
-    );
-    return () => clearTimeout(id);
-  }, [revealCount, status]);
-
-  // Redirect on completion.
-  useEffect(() => {
-    if (status === "completed" && !redirected.current) {
+    if ((status === "completed" || status === "partial") && !redirected.current) {
       redirected.current = true;
       router.replace("/dashboard");
     }
   }, [status, router]);
 
-  const items: ChecklistItem[] = CHECKLIST_LABELS.map((label, i) => {
-    if (i >= revealCount) return { label, state: "pending" };
-    // Revealed items below the latest reveal show as done; the latest is active.
-    if (i < revealCount - 1) return { label, state: "done" };
-    return { label, state: "active" };
-  });
+  const isTerminal = status === "completed" || status === "partial";
+  const modules = MODULE_LABELS.filter(
+    (m) => expected.length === 0 || expected.includes(m.key),
+  );
+  const doneSet = new Set(done);
+  const modulesDone = modules.filter((m) => doneSet.has(m.key)).length;
+  const allModulesDone = modules.length > 0 && modulesDone === modules.length;
+
+  // REAL progress: dispatch 8% → modules 8–80% (each tick is a landed module) →
+  // synthesis holds at 90% → terminal 100%. Never pretends beyond what happened.
+  const percent = isTerminal
+    ? 100
+    : expected.length === 0
+      ? 4 // job created, fan-out not recorded yet
+      : Math.round(8 + (modulesDone / modules.length) * 72 + (allModulesDone ? 10 : 0));
+
+  const items: ChecklistItem[] = [
+    {
+      label: "Dispatching your competitor scan",
+      state: expected.length > 0 || isTerminal ? "done" : "active",
+    },
+    ...modules.map((m, i): ChecklistItem => {
+      if (doneSet.has(m.key) || isTerminal) return { label: m.label, state: "done" };
+      // First unfinished module shows as active (they run in parallel; this is
+      // simply the next thing the user is waiting on).
+      const firstUnfinished = modules.findIndex((x) => !doneSet.has(x.key));
+      return { label: m.label, state: i === firstUnfinished ? "active" : "pending" };
+    }),
+    {
+      label: "Drafting & auditing your evidence-backed action plan",
+      state: isTerminal ? "done" : allModulesDone ? "active" : "pending",
+    },
+  ];
 
   if (status === "failed") {
     return (
@@ -127,16 +143,19 @@ export function StatusPoller({
     <div className="flex w-full max-w-md flex-col items-center gap-8">
       <RadarAnimation />
       <p className="font-mono text-xs uppercase tracking-wider text-white/50">
-        Step 5 of 5
+        {allModulesDone && !isTerminal
+          ? "Synthesising your action plan"
+          : `${modulesDone} of ${modules.length || 8} intelligence modules complete`}
       </p>
       <div className="w-full">
-        <ProgressBar percent={progress} />
+        <ProgressBar percent={percent} />
       </div>
       <div className="w-full">
         <ProgressChecklist items={items} />
       </div>
       <p className="text-center text-xs text-white/50">
-        First scan takes 2–3 minutes. We’ll email you when ready.
+        Live progress — each line ticks as real data lands. A full first scan
+        typically takes 3–6 minutes.
       </p>
     </div>
   );

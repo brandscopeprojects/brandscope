@@ -256,7 +256,9 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
         setMarkets((prev) => (prev.includes(tldMarket) ? prev : [...prev, tldMarket]));
       }
     }
-    suggestOnboarding(domain)
+    // Pass the ccTLD-derived market so the setup agent grounds competitor
+    // suggestions in live SERP evidence for THAT market from the first call.
+    suggestOnboarding(domain, tldMarket ? [tldMarket] : undefined)
       .then((s) => {
         setSuggestedMarkets(s.markets);
         setBrandName((prev) => (prev.trim() ? prev : (s.name ?? prev)));
