@@ -21,6 +21,7 @@ import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
 import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { type ScanModuleMessage, type CompetitorRef } from "../_shared/contracts.ts";
+import { languageCode } from "../_shared/dataforseo.ts";
 import {
   guessPackageIds,
   fetchGoogleAppInfo,
@@ -140,21 +141,23 @@ async function processCompetitor(
   deadline: number,
 ): Promise<void> {
   const remaining = () => Math.max(0, deadline - Date.now());
+  const language = languageCode(msg.markets);
 
   // 1. Resolve the app (best-effort; degrade to "no app found" without faking).
   const candidateIds = guessPackageIds(competitor.domain, competitor.name);
   const info: AppInfo | null = await fetchGoogleAppInfo(
     candidateIds,
     Math.min(25_000, remaining()),
+    language,
   );
 
   // 2. Reviews + vertical signals (only when we resolved an app).
   let reviews: Awaited<ReturnType<typeof fetchGoogleReviews>> = [];
   let verticalKeywords: string[] = [];
   if (info) {
-    reviews = await fetchGoogleReviews(info.ref.appId, REVIEW_CAP, Math.min(35_000, remaining()));
+    reviews = await fetchGoogleReviews(info.ref.appId, REVIEW_CAP, Math.min(35_000, remaining()), language);
     if (remaining() > 8_000) {
-      const signals = await fetchVerticalSignals(info.ref.appId);
+      const signals = await fetchVerticalSignals(info.ref.appId, language);
       verticalKeywords = signals.keywords;
     }
   }

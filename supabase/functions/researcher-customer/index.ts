@@ -26,6 +26,7 @@ import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
 import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import type { ScanModuleMessage, ScanSynthesisMessage, CompetitorRef } from "../_shared/contracts.ts";
+import { languageCode } from "../_shared/dataforseo.ts";
 import {
   fetchAudienceOverlap,
   fetchContentMentions,
@@ -85,6 +86,7 @@ async function processCompetitor(
 ): Promise<CompetitorResult> {
   const domain = competitor.domain;
   const name = competitor.name;
+  const language = languageCode(msg.markets);
 
   // ── 1. DataForSEO signals (each soft — one missing signal never aborts) ────
   const [traffic, mentions, sentiment, overlap, topKeywords]: [
@@ -94,15 +96,15 @@ async function processCompetitor(
     AudienceOverlap,
     string[],
   ] = await Promise.all([
-    soft(() => fetchTrafficMix(domain, location), { organic: null, paid: null, total: null }, "traffic_mix"),
-    soft(() => fetchContentMentions(name, location), [], "content_mentions"),
-    soft(() => fetchSentimentDistribution(name, location), { byConnotation: {}, totalCitations: null }, "sentiment"),
-    soft(() => fetchAudienceOverlap(domain, msg.brand_domain, location), { sharedKeywords: null }, "overlap"),
-    soft(() => fetchTopRankedKeywords(domain, location), [], "ranked_keywords"),
+    soft(() => fetchTrafficMix(domain, location, language), { organic: null, paid: null, total: null }, "traffic_mix"),
+    soft(() => fetchContentMentions(name, location, undefined, language), [], "content_mentions"),
+    soft(() => fetchSentimentDistribution(name, location, language), { byConnotation: {}, totalCitations: null }, "sentiment"),
+    soft(() => fetchAudienceOverlap(domain, msg.brand_domain, location, undefined, language), { sharedKeywords: null }, "overlap"),
+    soft(() => fetchTopRankedKeywords(domain, location, undefined, language), [], "ranked_keywords"),
   ]);
 
   const intent: SearchIntentMix = await soft(
-    () => fetchSearchIntent(topKeywords, location),
+    () => fetchSearchIntent(topKeywords, location, language),
     { byIntent: {} },
     "search_intent",
   );

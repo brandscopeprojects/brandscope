@@ -107,7 +107,19 @@ export function signalsForCompetitor(
   }
 
   const organicKeywordCount = asNum(pick(seo?.raw_data, "organic_keyword_count", "keyword_count"));
-  const bonusKeywordMovement = asNum(pick(seo?.raw_data, "bonus_keyword_movement"));
+  // §1 demand-proxy signals (written by researcher-traffic-seo since 2026-07-17).
+  const brandDemandVolume = asNum(pick(seo?.raw_data, "brand_demand_volume"));
+  const brandTrendsScore = asNum(pick(seo?.raw_data, "brand_trends_score"));
+  // §2 bonus_kw_norm: sourced from promotions' directional WoW movement (the
+  // seo raw_data field never existed — this term was silently null forever).
+  let bonusKeywordMovement = asNum(pick(seo?.raw_data, "bonus_keyword_movement"));
+  if (bonusKeywordMovement == null && promos.length > 0) {
+    const wow = promos
+      .map((p) => asNum((p as Record<string, unknown>).wow_bonus_change_pct))
+      .filter((v): v is number => v != null)
+      .map(Math.abs);
+    if (wow.length > 0) bonusKeywordMovement = Math.max(...wow);
+  }
 
   const adNetworks = tech?.ad_networks;
   const adNetworkCount = Array.isArray(adNetworks) ? adNetworks.length : null;
@@ -118,6 +130,8 @@ export function signalsForCompetitor(
   return {
     estMonthlyTraffic: estTraffic,
     organicKeywordCount,
+    brandDemandVolume,
+    brandTrendsScore,
     paidTrafficPct,
     adNetworkCount,
     promoSignalCount,

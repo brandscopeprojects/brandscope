@@ -44,6 +44,38 @@ export const REGULATORY_COVERED: ReadonlySet<string> = new Set([
   "south_africa",
 ]);
 
+// Primary Google-search language per country for DataForSEO queries — ISO2 →
+// language_code. Non-English EXCEPTIONS only; everything else defaults to "en".
+// Chosen for the language bettors actually search in (e.g. Maghreb betting
+// queries are French-dominant). Parsed by scripts/generate-market-maps.mjs into
+// supabase/functions/_shared/dataforseo.ts MARKET_LANGUAGE — keep entries on
+// single lines.
+export const LANGUAGE_BY_ISO2: Record<string, string> = {
+  // Portuguese
+  MZ: "pt", AO: "pt", BR: "pt", PT: "pt", CV: "pt", GW: "pt", ST: "pt",
+  // French (francophone Africa + Europe)
+  SN: "fr", CI: "fr", BJ: "fr", BF: "fr", ML: "fr", NE: "fr", TG: "fr",
+  GN: "fr", CM: "fr", GA: "fr", CG: "fr", CD: "fr", TD: "fr", CF: "fr",
+  DJ: "fr", KM: "fr", MG: "fr", MA: "fr", TN: "fr", DZ: "fr", FR: "fr",
+  BE: "fr", LU: "fr", MC: "fr", HT: "fr",
+  // Spanish
+  ES: "es", MX: "es", GT: "es", HN: "es", SV: "es", NI: "es", CR: "es",
+  PA: "es", CU: "es", DO: "es", CO: "es", VE: "es", EC: "es", PE: "es",
+  BO: "es", PY: "es", UY: "es", CL: "es", AR: "es", GQ: "es",
+  // Arabic
+  EG: "ar", LY: "ar", SD: "ar", SA: "ar", AE: "ar", QA: "ar", KW: "ar",
+  BH: "ar", OM: "ar", JO: "ar", LB: "ar", IQ: "ar", SY: "ar", YE: "ar",
+  PS: "ar", MR: "ar",
+  // European majors
+  DE: "de", AT: "de", CH: "de", LI: "de", IT: "it", SM: "it", NL: "nl",
+  PL: "pl", TR: "tr", RU: "ru", BY: "ru", KZ: "ru", UA: "uk", RO: "ro",
+  MD: "ro", BG: "bg", GR: "el", CY: "el", CZ: "cs", SK: "sk", HU: "hu",
+  SE: "sv", NO: "no", DK: "da", FI: "fi", IS: "is", HR: "hr", RS: "sr",
+  SI: "sl", EE: "et", LV: "lv", LT: "lt", AL: "sq",
+  // Asia-Pacific
+  JP: "ja", KR: "ko", TH: "th", VN: "vi", ID: "id", MY: "ms", TW: "zh-TW",
+};
+
 // [iso2, isoNumeric, displayName, region] — slug is derived from displayName
 // (lowercase, diacritics stripped, apostrophes dropped, non-alnum → "_").
 type Raw = readonly [string, number, string, Region];
@@ -292,6 +324,8 @@ export type Country = {
   flag: string;
   /** DataForSEO / Google geotarget country criteria ID (2000 + ISO numeric). */
   locationCode: number;
+  /** Primary search language for DataForSEO queries (default "en"). */
+  language: string;
   /** Regulatory corpus coverage (curated regulator sources exist). */
   regulatoryCovered: boolean;
 };
@@ -305,6 +339,7 @@ export const COUNTRIES: readonly Country[] = RAW.map(([iso2, num, label, region]
     iso2,
     flag: flagEmoji(iso2),
     locationCode: 2000 + num,
+    language: LANGUAGE_BY_ISO2[iso2] ?? "en",
     regulatoryCovered: REGULATORY_COVERED.has(value),
   };
 });

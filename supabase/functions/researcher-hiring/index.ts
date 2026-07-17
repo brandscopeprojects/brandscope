@@ -25,6 +25,7 @@ import {
   type ScanSynthesisMessage,
 } from "../_shared/contracts.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
+import { languageCode } from "../_shared/dataforseo.ts";
 import { fetchJobPostings, type JobPosting } from "./dataforseo-jobs.ts";
 import { classifyHiring } from "./classify.ts";
 
@@ -36,10 +37,11 @@ const TASK = "hiring" as const;
 async function fetchAllMarkets(
   competitorName: string,
   markets: string[],
+  language = "en",
 ): Promise<JobPosting[]> {
   const ms = markets.length > 0 ? markets : ["NG"]; // default Nigeria (MVP market)
   const settled = await Promise.allSettled(
-    ms.map((m) => fetchJobPostings(competitorName, m)),
+    ms.map((m) => fetchJobPostings(competitorName, m, undefined, language)),
   );
   const out: JobPosting[] = [];
   for (const r of settled) if (r.status === "fulfilled") out.push(...r.value);
@@ -55,7 +57,7 @@ async function processCompetitor(
   const start = Date.now();
   try {
     // 1. DataForSEO Google Jobs SERP across the brand's markets (PARTIAL source).
-    const postings = await fetchAllMarkets(competitor.name, msg.markets ?? []);
+    const postings = await fetchAllMarkets(competitor.name, msg.markets ?? [], languageCode(msg.markets));
 
     // 2. Haiku classification → roles / interpreted signals / geo expansion / tags.
     //    The single LLM step; it writes its own agent_job_logs row (loggedLlm).

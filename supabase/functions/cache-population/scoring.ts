@@ -13,6 +13,7 @@ export const REACH_KEYWORD_REF = 50_000; // §1
 export const AGG_ADNET_REF = 5; // §2
 export const AGG_PROMO_REF = 10; // §2
 export const AGG_BONUSKW_REF = 100; // §2
+export const DEMAND_REF = 100_000; // §1 demand-proxy fallback (owner-approved 2026-07-17)
 
 // ---- Primitives ----
 export function clamp(x: number, lo: number, hi: number): number {
@@ -31,6 +32,8 @@ export type EntitySignals = {
   // §1 reach
   estMonthlyTraffic: number | null; // DataForSEO bulk_traffic_estimation
   organicKeywordCount: number | null; // keywords_for_site count
+  brandDemandVolume: number | null; // §1 demand proxy — navigational search volume
+  brandTrendsScore: number | null; // §1 demand proxy — Google Trends interest 0–100
   // §2 aggression
   paidTrafficPct: number | null; // organic/paid split (0–100)
   adNetworkCount: number | null; // DetectZeStack ad_networks.length
@@ -58,16 +61,40 @@ export function keywordNorm(organicKeywordCount: number | null): number | null {
   if (organicKeywordCount == null) return null;
   return round2(clamp((100 * organicKeywordCount) / REACH_KEYWORD_REF, 0, 100));
 }
+/** §1 demand-proxy: brand-name search demand (+ optional Trends blend). Used only
+ *  when traffic_norm is null — Labs traffic is blind to direct-traffic brands in
+ *  thin markets. Never touches estimated_traffic itself. */
+export function demandNorm(
+  brandDemandVolume: number | null,
+  brandTrendsScore: number | null,
+): number | null {
+  if (brandDemandVolume == null && brandTrendsScore == null) return null;
+  const vol = brandDemandVolume == null
+    ? null
+    : round2(clamp((100 * Math.log10(brandDemandVolume + 1)) / Math.log10(DEMAND_REF), 0, 100));
+  if (vol == null) return round2(clamp(brandTrendsScore ?? 0, 0, 100));
+  if (brandTrendsScore == null) return vol;
+  return round2(0.7 * vol + 0.3 * clamp(brandTrendsScore, 0, 100));
+}
 /** reach_score. sovPct (§4) is computed across the set, passed in here. */
 export function reachScore(
   s: EntitySignals,
   sovPct: number | null,
-): number | null {
+): { score: number | null; basis: "traffic" | "brand_demand" | null } {
   const t = trafficNorm(s.estMonthlyTraffic);
+  // Demand-proxy fallback (scoring-formulas §1 amendment): substitute only when
+  // Labs traffic is absent.
+  const d = t == null ? demandNorm(s.brandDemandVolume, s.brandTrendsScore) : null;
+  const traffic = t ?? d;
+  const basis: "traffic" | "brand_demand" | null =
+    t != null ? "traffic" : d != null ? "brand_demand" : null;
   const k = keywordNorm(s.organicKeywordCount);
   // Need at least one reach signal; SOV alone (always present) is not enough to claim reach.
-  if (t == null && k == null) return null;
-  return round2(0.5 * (t ?? 0) + 0.3 * (k ?? 0) + 0.2 * (sovPct ?? 0));
+  if (traffic == null && k == null) return { score: null, basis: null };
+  return {
+    score: round2(0.5 * (traffic ?? 0) + 0.3 * (k ?? 0) + 0.2 * (sovPct ?? 0)),
+    basis: basis ?? "traffic",
+  };
 }
 
 // ---- §2 aggression_score (MVP-available signals only) ----
@@ -97,16 +124,22 @@ export function aggressionScore(s: EntitySignals): number | null {
 }
 
 // ---- §4 SOV — entity_est_traffic / SUM(est_traffic over brand+all tracked) ----
-/** Returns map keyed by entity id → sov_pct (0–100). Entities with null traffic get 0. */
+/** Returns map keyed by entity id → sov_pct (0–100), plus the basis used.
+ *  Demand-basis fallback (scoring-formulas §4 amendment): when the whole tracked
+ *  set has no traffic, share is computed over brand_demand_volume instead. */
 export function shareOfVoice(
-  entities: { id: string; estMonthlyTraffic: number | null }[],
-): Record<string, number> {
-  const total = entities.reduce((acc, e) => acc + (e.estMonthlyTraffic ?? 0), 0);
+  entities: { id: string; estMonthlyTraffic: number | null; brandDemandVolume?: number | null }[],
+): { sov: Record<string, number>; basis: "traffic" | "brand_demand" } {
+  const trafficTotal = entities.reduce((acc, e) => acc + (e.estMonthlyTraffic ?? 0), 0);
+  const useDemand = trafficTotal <= 0;
+  const value = (e: { estMonthlyTraffic: number | null; brandDemandVolume?: number | null }) =>
+    useDemand ? (e.brandDemandVolume ?? 0) : (e.estMonthlyTraffic ?? 0);
+  const total = entities.reduce((acc, e) => acc + value(e), 0);
   const out: Record<string, number> = {};
   for (const e of entities) {
-    out[e.id] = total > 0 ? round2((100 * (e.estMonthlyTraffic ?? 0)) / total) : 0;
+    out[e.id] = total > 0 ? round2((100 * value(e)) / total) : 0;
   }
-  return out;
+  return { sov: out, basis: useDemand && total > 0 ? "brand_demand" : "traffic" };
 }
 
 // ---- §5 AI Visibility (50/30/20) ----

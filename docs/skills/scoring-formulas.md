@@ -16,6 +16,20 @@ reach_score = 0.50*traffic_norm + 0.30*keyword_norm + 0.20*sov_pct
 Constants: `REACH_TRAFFIC_REF = 5,000,000` · `REACH_KEYWORD_REF = 50,000`
 Sources: DataForSEO `bulk_traffic_estimation`, `keywords_for_site`.
 
+**Demand-proxy fallback (owner-approved 2026-07-17).** Labs traffic estimation is
+keyword-derived and blind to direct-traffic brands in thin markets (SEMrush-gap
+decision). When `traffic_norm` is null, substitute:
+```
+demand_norm  = clamp(100 * log10(brand_demand_volume+1) / log10(DEMAND_REF), 0, 100)
+             blended when trends present: 0.7*demand_norm + 0.3*brand_trends_score
+```
+Constants: `DEMAND_REF = 100,000`.
+Sources: `keywords_data/google_ads/search_volume` (navigational volume for the
+brand name/domain label) + `keywords_data/google_trends/explore` (relative brand
+interest 0–100, owner-approved endpoint). The basis is persisted per entity as
+`reach_basis ∈ 'traffic' | 'brand_demand'` and labeled in the UI. The proxy NEVER
+writes into `estimated_traffic` — absolute traffic stays null/dash when unknown.
+
 ## 2. aggression_score (Market Position Map Y-axis) — MVP-available signals only
 ```
 aggression_score = 0.35*paid_traffic_norm + 0.25*adtech_norm + 0.25*promo_activity_norm + 0.15*bonus_kw_norm
@@ -44,6 +58,15 @@ threat_reasons: top 2–3 contributing terms, rendered as one-liners beneath the
 entity_sov_pct = 100 * entity_est_traffic / SUM(est_traffic over brand + all tracked competitors)
 ```
 Stored: `weekly_cache.sov_pct` (brand), `competitor_profiles.sov_pct` (each).
+
+**Demand-basis fallback (owner-approved 2026-07-17):** when the traffic total is
+0/absent for the whole tracked set, SOV is computed over `brand_demand_volume`
+instead; `sov_basis ∈ 'traffic' | 'brand_demand'` is persisted in
+`weekly_cache.raw_data` and the SOV donut labels the basis.
+
+**bonus_kw_norm source note:** `bonus_keyword_movement` is sourced from
+`abs(promotions_cache.wow_bonus_change_pct)` (already computed by
+researcher-promotions) — previously read but never written.
 
 ## 5. AI Visibility Score (0–100) — 50/30/20 (confirmed)
 ```

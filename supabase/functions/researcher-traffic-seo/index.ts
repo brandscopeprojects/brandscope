@@ -30,9 +30,14 @@ import {
   fetchKeywordIntersection,
   fetchRankedKeywords,
   fetchSearchVolumes,
+  fetchBrandDemand,
+  fetchBrandTrends,
+  fetchSiteKeywordCount,
   mergeKeywordGaps,
   trafficSplitPct,
 } from "./dataforseo-seo.ts";
+import { languageCode } from "../_shared/dataforseo.ts";
+import { getOrFetchMarketIntel, getOrFetchMarketIntelKeyed } from "../_shared/market-cache.ts";
 
 const PROMPT_VERSION = "traffic_seo.v1";
 
@@ -68,13 +73,63 @@ Deno.serve(async (req) => {
 
   try {
     const location = locationCode(msg.markets);
+    const language = languageCode(msg.markets);
     const competitors = Array.isArray(msg.competitors) ? msg.competitors : [];
+
+    // 0. Market-level demand signals — fetched once per (market, scan_week) and
+    // shared across every brand in the market (market_intel_cache; owner cadence
+    // rule: new week = fresh fetch). Only MISSING competitors trigger provider
+    // calls; repeat scans and sibling brands are cache hits.
+    const market0 = (msg.markets?.[0] ?? "global").toLowerCase();
+    const domainKey = (d: string) => (d || "").replace(/^www\./, "").toLowerCase();
+
+    const demandByDomain = await getOrFetchMarketIntelKeyed<number | null>(
+      sb, market0, "brand_demand",
+      competitors.map((c) => domainKey(c.domain)),
+      async (missing) => {
+        const out: Record<string, number | null> = {};
+        for (const c of competitors) {
+          const key = domainKey(c.domain);
+          if (!missing.includes(key) || key in out) continue;
+          out[key] = await fetchBrandDemand(c.name, c.domain, location, language).catch(() => null);
+        }
+        return out;
+      },
+    );
+
+    const kwCountByDomain = await getOrFetchMarketIntelKeyed<number | null>(
+      sb, market0, "site_kw_count",
+      competitors.map((c) => domainKey(c.domain)),
+      async (missing) => {
+        const out: Record<string, number | null> = {};
+        for (const c of competitors) {
+          const key = domainKey(c.domain);
+          if (!missing.includes(key) || key in out) continue;
+          out[key] = await fetchSiteKeywordCount(c.domain, location, language).catch(() => null);
+        }
+        return out;
+      },
+    );
+
+    // Google Trends (owner-approved): ONE comparison call for up to 5 tracked
+    // names, cached per market/week. Scores are a relative interest index.
+    const { value: trendsByName } = await getOrFetchMarketIntel<Record<string, number>>(
+      sb, market0, "brand_trends",
+      async () => {
+        const m = await fetchBrandTrends(competitors.slice(0, 5).map((c) => c.name), location);
+        return Object.fromEntries(m.entries());
+      },
+    ).catch(() => ({ value: {} as Record<string, number>, fromCache: false }));
 
     // 1. Fetch + structure per competitor (Promise.allSettled, bounded concurrency).
     const settled = await mapWithConcurrency(
       competitors,
       MAX_CONCURRENCY,
-      (c) => fetchCompetitorSeo(sb, msg, c, location, msg.brand_domain),
+      (c) => fetchCompetitorSeo(sb, msg, c, location, msg.brand_domain, language, {
+        brandDemandVolume: demandByDomain[domainKey(c.domain)] ?? null,
+        organicKeywordCount: kwCountByDomain[domainKey(c.domain)] ?? null,
+        brandTrendsScore: trendsByName[c.name.trim().toLowerCase()] ?? null,
+      }),
     );
 
     let anyFailures = false;
@@ -184,16 +239,24 @@ async function fetchCompetitorSeo(
   competitor: CompetitorRef,
   location: number,
   brandDomain: string,
+  language: string,
+  demandSignals: {
+    brandDemandVolume: number | null;
+    organicKeywordCount: number | null;
+    brandTrendsScore: number | null;
+  },
 ): Promise<CompetitorSeoResult> {
   const domain = competitor.domain;
 
   // Each DataForSEO call is independent → allSettled so a missing dataset doesn't
   // wipe the others. Tolerate per-call failure with null/[] (no fabrication).
+  // Demand/trends/keyword-count come precomputed from the shared market cache.
   const [estR, interR, rankedR] = await Promise.allSettled([
-    fetchTrafficEstimate(domain, location),
-    fetchKeywordIntersection(domain, brandDomain, location),
-    fetchRankedKeywords(domain, location),
+    fetchTrafficEstimate(domain, location, language),
+    fetchKeywordIntersection(domain, brandDomain, location, language),
+    fetchRankedKeywords(domain, location, language),
   ]);
+  const { brandDemandVolume, organicKeywordCount, brandTrendsScore } = demandSignals;
 
   const traffic = estR.status === "fulfilled"
     ? estR.value
@@ -211,7 +274,7 @@ async function fetchCompetitorSeo(
   let volumes = new Map<string, number>();
   if (needVolume.length > 0) {
     try {
-      volumes = await fetchSearchVolumes(needVolume, location);
+      volumes = await fetchSearchVolumes(needVolume, location, language);
     } catch {
       volumes = new Map(); // tolerate; gaps keep null volume
     }
@@ -264,10 +327,16 @@ async function fetchCompetitorSeo(
     dataQualityScore,
     rawData: {
       location_code: location,
+      language_code: language,
       brand_domain: brandDomain,
       traffic_estimate: traffic,
       intersection_count: intersectionGaps.length,
       ranked_count: ranked.gaps.length,
+      // Thin-market reach signals (scoring-formulas §1): navigational brand
+      // demand, relative Google Trends interest, organic keyword footprint.
+      brand_demand_volume: brandDemandVolume,
+      brand_trends_score: brandTrendsScore,
+      organic_keyword_count: organicKeywordCount,
       fetched_at: new Date().toISOString(),
     },
     evidence,

@@ -18,8 +18,6 @@ import type { KeywordGap, SerpPosition } from "./types.ts";
 // brands.market values e.g. 'nigeria'). Re-exported for this function's index.ts.
 export { locationCode };
 
-const LANGUAGE = "en";
-
 // ── number coercion (tolerate strings / missing) ─────────────────────────────
 function num(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -45,10 +43,11 @@ export type TrafficEstimate = {
 export async function fetchTrafficEstimate(
   domain: string,
   location: number,
+  language = "en",
 ): Promise<TrafficEstimate> {
   const body = await dfsPost(
     "dataforseo_labs/google/bulk_traffic_estimation/live",
-    [{ targets: [domain], location_code: location, language_code: LANGUAGE }],
+    [{ targets: [domain], location_code: location, language_code: language }],
   );
   const items = firstResult<Record<string, unknown>>(
     body as { tasks?: Array<{ result?: Record<string, unknown>[] }> },
@@ -81,6 +80,7 @@ export async function fetchKeywordIntersection(
   competitorDomain: string,
   brandDomain: string,
   location: number,
+  language = "en",
   limit = 200,
 ): Promise<KeywordGap[]> {
   const body = await dfsPost(
@@ -89,7 +89,7 @@ export async function fetchKeywordIntersection(
       target1: competitorDomain,
       target2: brandDomain,
       location_code: location,
-      language_code: LANGUAGE,
+      language_code: language,
       intersections: true,
       limit,
       order_by: ["keyword_data.keyword_info.search_volume,desc"],
@@ -137,6 +137,7 @@ export type RankedKeywordsResult = {
 export async function fetchRankedKeywords(
   competitorDomain: string,
   location: number,
+  language = "en",
   limit = 200,
 ): Promise<RankedKeywordsResult> {
   const body = await dfsPost(
@@ -144,7 +145,7 @@ export async function fetchRankedKeywords(
     [{
       target: competitorDomain,
       location_code: location,
-      language_code: LANGUAGE,
+      language_code: language,
       limit,
       order_by: ["keyword_data.keyword_info.search_volume,desc"],
     }],
@@ -187,6 +188,7 @@ export async function fetchRankedKeywords(
 export async function fetchSearchVolumes(
   keywords: string[],
   location: number,
+  language = "en",
 ): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   if (keywords.length === 0) return out;
@@ -194,7 +196,7 @@ export async function fetchSearchVolumes(
   const capped = keywords.slice(0, 700);
   const body = await dfsPost(
     "keywords_data/google_ads/search_volume/live",
-    [{ keywords: capped, location_code: location, language_code: LANGUAGE }],
+    [{ keywords: capped, location_code: location, language_code: language }],
   );
   const items = firstResult<Record<string, unknown>>(
     body as { tasks?: Array<{ result?: Record<string, unknown>[] }> },
@@ -205,6 +207,97 @@ export async function fetchSearchVolumes(
     if (kw && vol != null) out.set(kw.toLowerCase(), vol);
   }
   return out;
+}
+
+// ── 5. Brand demand: navigational search volume for the brand itself ─────────
+// Clickstream-free reach proxy for direct-traffic brands (scoring-formulas §1
+// demand_norm): how many people in this market search the brand BY NAME monthly.
+/** Max monthly search volume across [name, domain base label] for one entity. */
+export async function fetchBrandDemand(
+  name: string,
+  domain: string,
+  location: number,
+  language = "en",
+): Promise<number | null> {
+  const label = (domain || "").replace(/^www\./, "").split(".")[0] ?? "";
+  const keywords = [...new Set([name, label].map((k) => k.trim().toLowerCase()).filter(Boolean))];
+  if (keywords.length === 0) return null;
+  const volumes = await fetchSearchVolumes(keywords, location, language);
+  let max: number | null = null;
+  for (const v of volumes.values()) if (max == null || v > max) max = v;
+  return max;
+}
+
+// ── 6. Google Trends: relative brand interest (owner-approved 2026-07-17) ─────
+/** keywords_data/google_trends/explore/live — up to 5 brand names compared in one
+ *  call; returns mean interest 0–100 per keyword (lowercased). {} on failure. */
+export async function fetchBrandTrends(
+  brandNames: string[],
+  location: number,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const capped = [...new Set(brandNames.map((n) => n.trim()).filter(Boolean))].slice(0, 5);
+  if (capped.length === 0) return out;
+  try {
+    const body = await dfsPost(
+      "keywords_data/google_trends/explore/live",
+      [{ keywords: capped, location_code: location, date_from: trendsFromDate(), type: "web" }],
+    );
+    const items = firstResult<Record<string, unknown>>(
+      body as { tasks?: Array<{ result?: Record<string, unknown>[] }> },
+    );
+    // result[0].items[] → { type:'google_trends_graph', keywords:[...], data:[{values:[...]}] }
+    const graphs = Array.isArray(items[0]?.items)
+      ? (items[0].items as Record<string, unknown>[])
+      : [];
+    const graph = graphs.find((g) => Array.isArray(g.keywords) && Array.isArray(g.data));
+    if (!graph) return out;
+    const kws = graph.keywords as string[];
+    const data = graph.data as Array<Record<string, unknown>>;
+    const sums = new Array(kws.length).fill(0);
+    let n = 0;
+    for (const point of data) {
+      const values = Array.isArray(point.values) ? (point.values as Array<number | null>) : null;
+      if (!values) continue;
+      n += 1;
+      values.forEach((v, i) => {
+        if (typeof v === "number" && Number.isFinite(v)) sums[i] += v;
+      });
+    }
+    if (n === 0) return out;
+    kws.forEach((k, i) => out.set(k.toLowerCase(), Math.round(sums[i] / n)));
+    return out;
+  } catch (_e) {
+    return out;
+  }
+}
+
+/** Trends window: last 90 days (recency without week-to-week noise). */
+function trendsFromDate(): string {
+  const d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+
+// ── 7. Organic keyword count (keywords_for_site metadata) ─────────────────────
+// Feeds the reach formula's keyword_norm term (0.30 weight — previously never
+// written by any researcher). Metadata total only: limit 1 keeps cost minimal.
+export async function fetchSiteKeywordCount(
+  domain: string,
+  location: number,
+  language = "en",
+): Promise<number | null> {
+  try {
+    const body = await dfsPost(
+      "dataforseo_labs/google/keywords_for_site/live",
+      [{ target: domain, location_code: location, language_code: language, limit: 1 }],
+    );
+    const items = firstResult<Record<string, unknown>>(
+      body as { tasks?: Array<{ result?: Record<string, unknown>[] }> },
+    );
+    return num(items[0]?.total_count);
+  } catch (_e) {
+    return null;
+  }
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

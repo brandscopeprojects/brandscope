@@ -18,6 +18,7 @@ import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
 import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { sha256 } from "../_shared/evidence.ts";
+import { languageCode } from "../_shared/dataforseo.ts";
 import type { ScanModuleMessage, CompetitorRef } from "../_shared/contracts.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import {
@@ -141,11 +142,13 @@ async function processCompetitor(
 ): Promise<void> {
   if (Date.now() > deadline) throw new Error("time budget exceeded before competitor start");
 
+  const language = languageCode(msg.markets);
+
   // 1. Gather DataForSEO promo signals (each source isolated; partial is fine).
   const [mentionsR, newsR, volumeR] = await Promise.allSettled([
-    fetchBonusMentions(competitor.domain, competitor.name, location),
-    fetchPromoNews(competitor.name, competitor.domain, location),
-    fetchBonusKeywordVolume(competitor.name, competitor.domain, location),
+    fetchBonusMentions(competitor.domain, competitor.name, location, undefined, language),
+    fetchPromoNews(competitor.name, competitor.domain, location, undefined, language),
+    fetchBonusKeywordVolume(competitor.name, competitor.domain, location, language),
   ]);
 
   const allMentions: ContentMention[] = mentionsR.status === "fulfilled" ? mentionsR.value : [];

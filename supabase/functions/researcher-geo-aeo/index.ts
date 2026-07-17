@@ -23,6 +23,7 @@ import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
 import { completeModule, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import type { ScanModuleMessage } from "../_shared/contracts.ts";
+import { languageCode } from "../_shared/dataforseo.ts";
 import {
   PLATFORMS,
   loadQueries,
@@ -88,7 +89,7 @@ Deno.serve(async (req) => {
     // 2b. Mentions + AEO in parallel with each other (independent of engines).
     const [mentionsSettled, aeoSettled] = await Promise.allSettled([
       fetchMentionMetrics(msg.brand_name),
-      fetchAeo(msg.brand_domain, queries, market),
+      fetchAeo(msg.brand_domain, queries, market, languageCode(msg.markets)),
     ]);
     const mentions =
       mentionsSettled.status === "fulfilled" ? mentionsSettled.value : { topMentions: [], raw: null };

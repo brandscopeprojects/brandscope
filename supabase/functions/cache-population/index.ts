@@ -195,15 +195,24 @@ Deno.serve(async (req) => {
       rivalSignals.set(c.id, signalsForCompetitor(md, c.id, compAi[c.id] ?? null));
     }
 
-    // SOV across brand + tracked rivals (§4).
+    // SOV across brand + tracked rivals (§4; demand-basis fallback when the whole
+    // set has no Labs traffic — scoring-formulas §4 amendment).
     const sovInput = [
-      { id: brand_id, estMonthlyTraffic: brandSignals.estMonthlyTraffic },
-      ...rivals.map((c) => ({ id: c.id, estMonthlyTraffic: rivalSignals.get(c.id)!.estMonthlyTraffic })),
+      {
+        id: brand_id,
+        estMonthlyTraffic: brandSignals.estMonthlyTraffic,
+        brandDemandVolume: brandSignals.brandDemandVolume,
+      },
+      ...rivals.map((c) => ({
+        id: c.id,
+        estMonthlyTraffic: rivalSignals.get(c.id)!.estMonthlyTraffic,
+        brandDemandVolume: rivalSignals.get(c.id)!.brandDemandVolume,
+      })),
     ];
-    const sov = shareOfVoice(sovInput);
+    const { sov, basis: sovBasis } = shareOfVoice(sovInput);
 
-    // Brand scalar scores.
-    const brandReach = reachScore(brandSignals, sov[brand_id]);
+    // Brand scalar scores (reach carries its basis: traffic vs brand_demand proxy).
+    const { score: brandReach, basis: brandReachBasis } = reachScore(brandSignals, sov[brand_id]);
     const brandAggression = aggressionScore(brandSignals);
     const brandPromoNorm = promoActivityNorm(brandSignals.promoSignalCount);
 
@@ -212,7 +221,7 @@ Deno.serve(async (req) => {
     const threatComps: { name: string; t: ThreatInputs }[] = [];
     for (const c of rivals) {
       const s = rivalSignals.get(c.id)!;
-      const cReach = reachScore(s, sov[c.id]);
+      const { score: cReach, basis: cReachBasis } = reachScore(s, sov[c.id]);
       const cAggr = aggressionScore(s);
       const cPromoNorm = promoActivityNorm(s.promoSignalCount);
       competitorStates.push({
@@ -224,6 +233,7 @@ Deno.serve(async (req) => {
         // per-competitor threat is a brand-relative rollup, not a per-competitor scalar at MVP
         threatScore: null,
         estimatedMonthlyTraffic: s.estMonthlyTraffic,
+        reachBasis: cReachBasis,
       });
       threatComps.push({
         name: c.name,
@@ -320,6 +330,9 @@ Deno.serve(async (req) => {
         competitors_tracked: rivals.length,
         competitor_states: competitorStates as unknown as Record<string, unknown>[],
         radar_data: radar_data as unknown as Record<string, unknown>,
+        // Score-basis honesty flags (scoring-formulas §1/§4 amendments): traffic vs
+        // brand_demand proxy. competitor_states rows carry per-entity reachBasis.
+        raw_data: { reach_basis: brandReachBasis, sov_basis: sovBasis } as unknown as Record<string, unknown>,
         cached_at: nowIso,
         expires_at: expiresIso,
         updated_at: nowIso,
@@ -332,7 +345,7 @@ Deno.serve(async (req) => {
     await Promise.allSettled(
       rivals.map((c) => {
         const s = rivalSignals.get(c.id)!;
-        const cReach = reachScore(s, sov[c.id]);
+        const { score: cReach } = reachScore(s, sov[c.id]);
         const cAggr = aggressionScore(s);
         const organic = s.estMonthlyTraffic;
         const tech = md.techByCompetitor.get(c.id);

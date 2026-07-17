@@ -197,6 +197,12 @@ function ScatterTooltip(props: {
           <dd className="font-mono text-ink">{fmt(d.threatScore, "/100")}</dd>
         </div>
       </dl>
+      {d.reachBasis === "brand_demand" && (
+        <p className="mt-1.5 max-w-[220px] text-[11px] leading-snug text-ink-faint">
+          Reach basis: brand search demand (no traffic estimate available for this
+          domain yet)
+        </p>
+      )}
     </div>
   );
 }

@@ -17,7 +17,22 @@ import { dfsPost, dfsGet, firstResult, dfsTaskPostAndPoll } from "../_shared/dat
 
 /** Lagos / Nigeria default targeting for app data. */
 const LOCATION_NAME = "Nigeria";
-const LANGUAGE_NAME = "English";
+
+// app_data endpoints take language_name (not language_code); map the shared
+// languageCode() output to DataForSEO's language names. Fallback English.
+const LANGUAGE_NAME_BY_CODE: Record<string, string> = {
+  en: "English",
+  pt: "Portuguese",
+  fr: "French",
+  es: "Spanish",
+  ar: "Arabic",
+  de: "German",
+  it: "Italian",
+  nl: "Dutch",
+  pl: "Polish",
+  tr: "Turkish",
+  ru: "Russian",
+};
 
 export type AppRef = {
   store: "google" | "apple";
@@ -77,7 +92,9 @@ export function guessPackageIds(domain: string, name: string): string[] {
 export async function fetchGoogleAppInfo(
   candidateIds: string[],
   budgetMs: number,
+  language = "en",
 ): Promise<AppInfo | null> {
+  const languageName = LANGUAGE_NAME_BY_CODE[language] ?? "English";
   const deadline = Date.now() + budgetMs;
   for (const appId of candidateIds) {
     if (Date.now() > deadline) break;
@@ -85,7 +102,7 @@ export async function fetchGoogleAppInfo(
       const results = await dfsTaskPostAndPoll<Record<string, unknown>>(
         "app_data/google/app_info/task_post",
         "app_data/google/app_info/task_get",
-        [{ app_id: appId, location_name: LOCATION_NAME, language_name: LANGUAGE_NAME }],
+        [{ app_id: appId, location_name: LOCATION_NAME, language_name: languageName }],
         { maxWaitMs: Math.min(20_000, Math.max(0, deadline - Date.now())), intervalMs: 3_000 },
       );
       const info = mapGoogleAppInfo(results, appId);
@@ -131,7 +148,9 @@ export async function fetchGoogleReviews(
   appId: string,
   cap: number,
   budgetMs: number,
+  language = "en",
 ): Promise<AppReview[]> {
+  const languageName = LANGUAGE_NAME_BY_CODE[language] ?? "English";
   try {
     const results = await dfsTaskPostAndPoll<Record<string, unknown>>(
       "app_data/google/app_reviews/task_post",
@@ -139,7 +158,7 @@ export async function fetchGoogleReviews(
       [{
         app_id: appId,
         location_name: LOCATION_NAME,
-        language_name: LANGUAGE_NAME,
+        language_name: languageName,
         depth: Math.min(cap, 200),
         sort_by: "newest",
       }],
@@ -177,16 +196,17 @@ function mapReviews(
  * Live endpoints. Returns competitor app titles + ranked keywords (used as soft
  * signals for which verticals the app covers). Bounded, best-effort.
  */
-export async function fetchVerticalSignals(appId: string): Promise<{
+export async function fetchVerticalSignals(appId: string, language = "en"): Promise<{
   competitorApps: string[];
   keywords: string[];
 }> {
+  const languageName = LANGUAGE_NAME_BY_CODE[language] ?? "English";
   const competitorApps: string[] = [];
   const keywords: string[] = [];
   try {
     const comp = await dfsPost<{ tasks?: Array<{ result?: Record<string, unknown>[] }> }>(
       "dataforseo_labs/google/app_competitors/live",
-      [{ app_id: appId, location_name: LOCATION_NAME, language_name: LANGUAGE_NAME, limit: 20 }],
+      [{ app_id: appId, location_name: LOCATION_NAME, language_name: languageName, limit: 20 }],
     );
     for (const res of firstResult<Record<string, unknown>>(comp)) {
       for (const it of (res.items as Record<string, unknown>[] | undefined) ?? []) {
@@ -198,7 +218,7 @@ export async function fetchVerticalSignals(appId: string): Promise<{
   try {
     const kw = await dfsPost<{ tasks?: Array<{ result?: Record<string, unknown>[] }> }>(
       "dataforseo_labs/google/app_keywords/live",
-      [{ app_id: appId, location_name: LOCATION_NAME, language_name: LANGUAGE_NAME, limit: 50 }],
+      [{ app_id: appId, location_name: LOCATION_NAME, language_name: languageName, limit: 50 }],
     );
     for (const res of firstResult<Record<string, unknown>>(kw)) {
       for (const it of (res.items as Record<string, unknown>[] | undefined) ?? []) {

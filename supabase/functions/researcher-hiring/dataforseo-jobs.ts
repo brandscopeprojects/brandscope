@@ -22,7 +22,6 @@ const MARKET_META: Record<string, { location: number; label: string; city: strin
   ZA: { location: 2710, label: "South Africa", city: "Johannesburg" },
 };
 const DEFAULT_MARKET = { location: 2566, label: "Nigeria", city: "Lagos" };
-const LANGUAGE = "en";
 
 /** Resolve display label + DataForSEO location for a market code. */
 export function marketMeta(market: string): { location: number; label: string; city: string } {
@@ -72,6 +71,7 @@ export async function fetchJobPostings(
   competitorName: string,
   market: string,
   depth = 20,
+  language = "en",
 ): Promise<JobPosting[]> {
   const meta = marketMeta(market);
   const keyword = `${competitorName} ${meta.city} ${meta.label}`.trim();
@@ -81,7 +81,7 @@ export async function fetchJobPostings(
     [{
       keyword,
       location_code: meta.location,
-      language_code: LANGUAGE,
+      language_code: language,
       depth,
     }],
   );

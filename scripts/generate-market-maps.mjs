@@ -83,6 +83,47 @@ let dfs = readFileSync(dfsPath, "utf8");
 const dfsRe = /\/\/ ── Market → DataForSEO Google location_code ─+[\s\S]*?\nexport const MARKET_LOCATION: Record<string, number> = \{[\s\S]*?\n\};/;
 if (!dfsRe.test(dfs)) throw new Error("MARKET_LOCATION block not found in dataforseo.ts");
 dfs = dfs.replace(dfsRe, locBlock);
+
+// ── emit MARKET_LANGUAGE (+ languageCode helper) into _shared/dataforseo.ts ──
+// Source: LANGUAGE_BY_ISO2 in countries.ts (non-English exceptions; default en).
+const langMapSrc = src.match(/export const LANGUAGE_BY_ISO2[\s\S]*?\n\};/);
+if (!langMapSrc) throw new Error("LANGUAGE_BY_ISO2 not found in countries.ts");
+const langByIso2 = {};
+for (const m of langMapSrc[0].matchAll(/([A-Z]{2}):\s*"([a-zA-Z-]+)"/g)) {
+  langByIso2[m[1]] = m[2];
+}
+if (Object.keys(langByIso2).length < 50) {
+  throw new Error(`parsed only ${Object.keys(langByIso2).length} language entries — regex drift?`);
+}
+const langLines = rows
+  .filter((r) => langByIso2[r.iso2])
+  .map((r) => `  ${slug(r.label)}: ${JSON.stringify(langByIso2[r.iso2])},`)
+  .join("\n");
+const langBlock = `// ── Market → primary search language ──────────────────────────────────────────
+// GENERATED from lib/onboarding/countries.ts (LANGUAGE_BY_ISO2) by
+// scripts/generate-market-maps.mjs — do not edit by hand. Non-English exceptions
+// only; languageCode() defaults to "en".
+export const MARKET_LANGUAGE: Record<string, string> = {
+${langLines}
+};
+
+/** Resolve the DataForSEO language_code for a brand's market list (first known wins). */
+export function languageCode(markets: string[] | null | undefined): string {
+  for (const m of markets ?? []) {
+    const lang = MARKET_LANGUAGE[(m ?? "").toLowerCase().trim()];
+    if (lang) return lang;
+  }
+  return "en";
+}`;
+const langRe = /\/\/ ── Market → primary search language ─+[\s\S]*?\nexport function languageCode[\s\S]*?\n\}/;
+if (langRe.test(dfs)) {
+  dfs = dfs.replace(langRe, langBlock);
+} else {
+  // First run: insert immediately after the DEFAULT_LOCATION line.
+  const anchor = /export const DEFAULT_LOCATION = [^\n]*\n/;
+  if (!anchor.test(dfs)) throw new Error("DEFAULT_LOCATION anchor not found in dataforseo.ts");
+  dfs = dfs.replace(anchor, (m) => `${m}\n${langBlock}\n`);
+}
 writeFileSync(dfsPath, dfs);
 
 // ── emit ALLOWED_MARKETS into onboarding-suggest/index.ts ────────────────────

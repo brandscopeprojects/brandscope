@@ -48,6 +48,8 @@ export type ScatterPoint = {
   traffic?: number | null; // tooltip
   sovPct?: number | null; // tooltip
   threatScore?: number | null; // tooltip
+  /** "brand_demand" when reach uses the search-demand proxy — tooltip labels it. */
+  reachBasis?: "traffic" | "brand_demand" | null;
 };
 
 /**

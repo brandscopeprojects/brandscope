@@ -11,7 +11,7 @@
 ## Module → MVP source map
 
 ### 1. SEO  ✓ FULL  → writes `seo_cache` (+ `competitor_profiles`)
-- **Endpoints:** `dataforseo_labs/google/bulk_traffic_estimation/live`, `…/domain_intersection/live`, `…/keywords_for_site/live`, `…/competitors_domain/live`, `…/ranked_keywords/live`; `keywords_data/google_ads/search_volume/live`.
+- **Endpoints:** `dataforseo_labs/google/bulk_traffic_estimation/live`, `…/domain_intersection/live`, `…/keywords_for_site/live`, `…/competitors_domain/live`, `…/ranked_keywords/live`; `keywords_data/google_ads/search_volume/live; keywords_data/google_trends/explore/live (owner-approved 2026-07-17 — relative brand-interest index for the §1 demand-proxy reach fallback; see scoring-formulas §1)`.
 - **Haiku:** structure keyword-gap rows, flag significant WoW rank changes. (Mostly already-structured → minimal LLM.)
 
 ### 2. GEO  ✓ FULL (4 platforms)  → writes `geo_cache`

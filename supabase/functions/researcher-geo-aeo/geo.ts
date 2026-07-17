@@ -247,6 +247,7 @@ export async function fetchAeo(
   brandDomain: string,
   queries: GeoQuery[],
   market: string,
+  language = "en",
 ): Promise<AeoResult> {
   const featuredSnippets: AeoResult["featuredSnippets"] = [];
   const paaAppearances: AeoResult["paaAppearances"] = [];
@@ -259,7 +260,7 @@ export async function fetchAeo(
     try {
       const body = await dfsPost<{ tasks?: Array<{ result?: Record<string, unknown>[] }> }>(
         "serp/google/organic/live/advanced",
-        [{ keyword: q.text, location_code: locationCode, language_code: "en", depth: 20 }],
+        [{ keyword: q.text, location_code: locationCode, language_code: language, depth: 20 }],
       );
       raws.push(body);
       const result = firstResult<Record<string, unknown>>(body)[0];

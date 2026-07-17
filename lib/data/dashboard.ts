@@ -47,6 +47,10 @@ export async function getDashboardData(brand: BrandSummary): Promise<DashboardDa
 
   const competitors = (cache.competitor_states as CompetitorState[] | null) ?? [];
 
+  // raw_data was added in migration 16 (basis flags) — generated DB types predate it.
+  const brandRawData = ((cache as Record<string, unknown>).raw_data ?? {}) as {
+    reach_basis?: string | null;
+  };
   const brandPoint: ScatterPoint = {
     id: brand.id,
     label: brand.name,
@@ -55,6 +59,7 @@ export async function getDashboardData(brand: BrandSummary): Promise<DashboardDa
     isOwnBrand: true,
     sovPct: cache.sov_pct,
     threatScore: cache.threat_score,
+    reachBasis: brandRawData.reach_basis === "brand_demand" ? "brand_demand" : null,
   };
   const competitorPoints: ScatterPoint[] = competitors.map((c) => ({
     id: c.id,
@@ -65,6 +70,7 @@ export async function getDashboardData(brand: BrandSummary): Promise<DashboardDa
     traffic: c.estimatedMonthlyTraffic,
     sovPct: c.sovPct,
     threatScore: c.threatScore,
+    reachBasis: c.reachBasis ?? null,
   }));
 
   const sov: SovSlice[] = [

@@ -21,7 +21,7 @@ import { MODELS } from "../_shared/contracts.ts";
 import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
 import { resolveModel } from "../_shared/router.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
-import { dfsPost, firstResult, MARKET_LOCATION } from "../_shared/dataforseo.ts";
+import { dfsPost, firstResult, MARKET_LOCATION, languageCode } from "../_shared/dataforseo.ts";
 
 export const PROMPT_VERSION = "onboarding-suggest@v1";
 
@@ -267,7 +267,7 @@ async function fetchSerpCompetitorEvidence(marketSlug: string, marketLabel: stri
       [{
         keyword: `online sports betting ${marketLabel}`,
         location_code: location,
-        language_code: "en",
+        language_code: languageCode([marketSlug]),
         depth: 20,
       }],
     );
@@ -464,10 +464,14 @@ Deno.serve(async (req) => {
   const sb = serviceClient();
   // Homepage + live SERP evidence in parallel (SERP only when a market is known).
   const firstMarket = confirmedMarkets[0];
+  // SERP evidence is market-level → served from market_intel_cache when another
+  // signup/scan already fetched this market this week (fetch-once-per-week rule).
   const [homepage, serpDomains] = await Promise.all([
     fetchHomepageText(domain),
     firstMarket
-      ? fetchSerpCompetitorEvidence(firstMarket, ALLOWED_MARKETS[firstMarket] ?? firstMarket)
+      ? getOrFetchMarketIntel<string[]>(sb, firstMarket, "serp_betting", () =>
+          fetchSerpCompetitorEvidence(firstMarket, ALLOWED_MARKETS[firstMarket] ?? firstMarket),
+        ).then((r) => r.value).catch(() => [] as string[])
       : Promise.resolve([] as string[]),
   ]);
   const userPrompt = buildPrompt(domain, homepage, confirmedMarkets, serpDomains);

@@ -4,7 +4,7 @@
 // best-effort discovery of new regulator-doc URLs for ingestion. NO Firecrawl /
 // Apify (excluded at MVP).
 
-import { dfsPost, firstResult } from "../_shared/dataforseo.ts";
+import { dfsPost, firstResult, languageCode } from "../_shared/dataforseo.ts";
 
 // DataForSEO Google location codes per market (same mapping as traffic-seo).
 const LOCATION_BY_MARKET: Record<string, number> = {
@@ -46,7 +46,7 @@ export async function fetchRegulatoryNews(market: string): Promise<NewsItem[]> {
   try {
     const body = await dfsPost(
       "serp/google/news/live/advanced",
-      [{ keyword, location_code: location, language_code: "en", depth: 20 }],
+      [{ keyword, location_code: location, language_code: languageCode([market]), depth: 20 }],
     );
     const results = firstResult<Record<string, unknown>>(
       body as { tasks?: Array<{ result?: Record<string, unknown>[] }> },

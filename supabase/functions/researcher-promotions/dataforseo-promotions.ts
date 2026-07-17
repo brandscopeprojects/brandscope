@@ -20,8 +20,6 @@ import { dfsPost, firstResult, locationCode } from "../_shared/dataforseo.ts";
 // brands.market values e.g. 'nigeria'). Re-exported for this function's index.ts.
 export { locationCode };
 
-const LANGUAGE = "en";
-
 // Bonus-keyword set used to probe promo intensity. These are TOPIC keywords (the
 // % movement of their search volume is a directional signal); none of these read
 // out an exact bonus amount.
@@ -72,6 +70,7 @@ export async function fetchBonusMentions(
   competitorName: string,
   location: number,
   limit = 20,
+  language = "en",
 ): Promise<ContentMention[]> {
   const label = competitorName?.trim() || brandLabel(competitorDomain);
   const keyword = `${label} bonus OR "free bet" OR promo`;
@@ -80,7 +79,7 @@ export async function fetchBonusMentions(
     [{
       keyword,
       location_code: location,
-      language_code: LANGUAGE,
+      language_code: language,
       limit,
       order_by: ["content_info.timestamp,desc"],
     }],
@@ -123,6 +122,7 @@ export async function fetchPromoNews(
   competitorDomain: string,
   location: number,
   limit = 15,
+  language = "en",
 ): Promise<NewsItem[]> {
   const label = competitorName?.trim() || brandLabel(competitorDomain);
   const body = await dfsPost(
@@ -130,7 +130,7 @@ export async function fetchPromoNews(
     [{
       keyword: `${label} bonus OR promo OR offer`,
       location_code: location,
-      language_code: LANGUAGE,
+      language_code: language,
       depth: limit,
     }],
   );
@@ -177,12 +177,13 @@ export async function fetchBonusKeywordVolume(
   competitorName: string,
   competitorDomain: string,
   location: number,
+  language = "en",
 ): Promise<VolumeSnapshot> {
   const label = competitorName?.trim() || brandLabel(competitorDomain);
   const keywords = BONUS_KEYWORD_TEMPLATES.map((t) => `${label} ${t}`).slice(0, 50);
   const body = await dfsPost(
     "keywords_data/google_ads/search_volume/live",
-    [{ keywords, location_code: location, language_code: LANGUAGE }],
+    [{ keywords, location_code: location, language_code: language }],
   );
   const items = firstResult<Record<string, unknown>>(
     body as { tasks?: Array<{ result?: Record<string, unknown>[] }> },

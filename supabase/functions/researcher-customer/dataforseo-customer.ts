@@ -18,7 +18,6 @@ import { dfsPost, firstResult, locationCode } from "../_shared/dataforseo.ts";
 // Location resolution lives in _shared/dataforseo.ts (MARKET_LOCATION, keyed by
 // brands.market values e.g. 'nigeria'). Re-exported for this function's index.ts.
 export { locationCode };
-const LANGUAGE = "en";
 
 // ── coercion helpers (tolerate strings / missing) ────────────────────────────
 function num(v: unknown): number | null {
@@ -47,10 +46,10 @@ export type TrafficMix = {
  * us at MVP; "referral / direct / social" channel splits are NOT available, so
  * we never invent them. Haiku turns this mix into traffic_sources[] downstream.
  */
-export async function fetchTrafficMix(domain: string, location: number): Promise<TrafficMix> {
+export async function fetchTrafficMix(domain: string, location: number, language = "en"): Promise<TrafficMix> {
   const body = await dfsPost(
     "dataforseo_labs/google/bulk_traffic_estimation/live",
-    [{ targets: [domain], location_code: location, language_code: LANGUAGE }],
+    [{ targets: [domain], location_code: location, language_code: language }],
   );
   const items = firstResult<Record<string, unknown>>(
     body as { tasks?: Array<{ result?: Record<string, unknown>[] }> },
@@ -98,13 +97,14 @@ export async function fetchContentMentions(
   keyword: string,
   location: number,
   limit = 30,
+  language = "en",
 ): Promise<ContentMention[]> {
   const body = await dfsPost(
     "content_analysis/search/live",
     [{
       keyword,
       location_code: location,
-      language_code: LANGUAGE,
+      language_code: language,
       limit,
       order_by: ["content_info.sentiment_connotations,desc"],
       page_type: ["ecommerce", "news", "blogs", "message-boards", "organization", "review-sites"],
@@ -150,10 +150,11 @@ export async function fetchContentMentions(
 export async function fetchSentimentDistribution(
   keyword: string,
   location: number,
+  language = "en",
 ): Promise<SentimentDistribution> {
   const body = await dfsPost(
     "content_analysis/sentiment_analysis/live",
-    [{ keyword, location_code: location, language_code: LANGUAGE }],
+    [{ keyword, location_code: location, language_code: language }],
   );
   const items = firstResult<Record<string, unknown>>(
     body as { tasks?: Array<{ result?: Record<string, unknown>[] }> },
@@ -185,6 +186,7 @@ export async function fetchAudienceOverlap(
   brandDomain: string,
   location: number,
   limit = 100,
+  language = "en",
 ): Promise<AudienceOverlap> {
   const body = await dfsPost(
     "dataforseo_labs/google/domain_intersection/live",
@@ -192,7 +194,7 @@ export async function fetchAudienceOverlap(
       target1: competitorDomain,
       target2: brandDomain,
       location_code: location,
-      language_code: LANGUAGE,
+      language_code: language,
       intersections: true,
       limit,
     }],
@@ -222,12 +224,13 @@ export type SearchIntentMix = {
 export async function fetchSearchIntent(
   keywords: string[],
   location: number,
+  language = "en",
 ): Promise<SearchIntentMix> {
   const capped = keywords.filter((k) => k && k.length > 0).slice(0, 100);
   if (capped.length === 0) return { byIntent: {} };
   const body = await dfsPost(
     "dataforseo_labs/google/search_intent/live",
-    [{ keywords: capped, location_code: location, language_code: LANGUAGE }],
+    [{ keywords: capped, location_code: location, language_code: language }],
   );
   const items = firstResult<Record<string, unknown>>(
     body as { tasks?: Array<{ result?: Record<string, unknown>[] }> },
@@ -257,13 +260,14 @@ export async function fetchTopRankedKeywords(
   domain: string,
   location: number,
   limit = 100,
+  language = "en",
 ): Promise<string[]> {
   const body = await dfsPost(
     "dataforseo_labs/google/ranked_keywords/live",
     [{
       target: domain,
       location_code: location,
-      language_code: LANGUAGE,
+      language_code: language,
       limit,
       order_by: ["keyword_data.keyword_info.search_volume,desc"],
     }],

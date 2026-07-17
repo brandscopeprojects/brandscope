@@ -459,3 +459,19 @@ console, backlog P2c):
 ---
 
 *This amendments file is authoritative over the original schema where they differ. Any further schema change must be appended here with sign-off.*
+
+## D.8 `market_intel_cache` + `weekly_cache.raw_data` (owner-approved 2026-07-17)
+
+Migration 16. Market-level provider evidence (SERP betting domains, brand-name
+search-demand volumes, Google Trends scores, site keyword counts) is fetched
+ONCE per `(market, scan_week, kind)` and shared across all brands in that
+market — the owner's cadence rule: Monday's Mozambique fetch serves Wednesday's
+signup; a new scan_week triggers a fresh fetch. Class-2 service-role-only (RLS
+enabled, no policies). Payloads for keyed kinds (`brand_demand`,
+`site_kw_count`, `brand_trends`) are `Record<key, value>` and deep-merge
+additively so different competitor sets dedupe provider spend. Helper:
+`supabase/functions/_shared/market-cache.ts`.
+
+`weekly_cache.raw_data jsonb` (additive) carries the score-basis honesty flags
+`{ reach_basis, sov_basis }` per scoring-formulas §1/§4 amendments;
+`competitor_states` elements gain optional `reachBasis`.
