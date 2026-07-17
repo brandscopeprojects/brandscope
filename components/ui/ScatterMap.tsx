@@ -206,9 +206,34 @@ export function ScatterMap({
   competitors,
   onCompetitorClick,
 }: ScatterMapProps) {
+  // A player with no reach signal (DataForSEO has no traffic estimate for the
+  // domain yet) cannot be meaningfully positioned on the X axis. Plotting them
+  // anyway stacks every dot on one pixel at the origin with garbled labels —
+  // reads as broken. Honest rendering: plot only positioned players, list the
+  // rest, and say so plainly when nobody can be positioned yet.
+  const hasPosition = (p: ScatterPoint) => (p.reach ?? 0) > 0;
+  const positioned = competitors.filter(hasPosition);
+  const unpositioned = competitors.filter((c) => !hasPosition(c));
+  const brandPositioned = hasPosition(brand);
+
+  if (!brandPositioned && positioned.length === 0) {
+    return (
+      <div className="flex h-full min-h-[320px] w-full flex-col items-center justify-center gap-2 px-6 text-center">
+        <p className="text-sm font-medium text-ink">Not enough data to map positions yet</p>
+        <p className="max-w-md text-xs leading-relaxed text-ink-secondary">
+          Positioning needs traffic reach, and DataForSEO has no estimates for these
+          domains yet — common for smaller country-specific sites. All{" "}
+          {competitors.length + 1} players were scanned this week; dots appear here
+          as coverage builds. Promotions, GEO and regulatory intelligence are
+          unaffected.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full w-full">
-      <ResponsiveContainer width="100%" height="100%" minHeight={320}>
+    <div className="flex h-full w-full flex-col">
+      <ResponsiveContainer width="100%" height="100%" minHeight={300}>
         <ScatterChart margin={{ top: 16, right: 24, bottom: 28, left: 12 }}>
           <CartesianGrid stroke={TOKEN.divider} strokeOpacity={0.6} />
           <XAxis
@@ -260,7 +285,7 @@ export function ScatterMap({
             content={<ScatterTooltip />}
           />
           <Scatter
-            data={competitors}
+            data={positioned}
             isAnimationActive={false}
             shape={(p: object) => (
               <CompetitorDot
@@ -269,17 +294,27 @@ export function ScatterMap({
               />
             )}
           />
-          <Scatter
-            data={[brand]}
-            isAnimationActive={false}
-            shape={(p: object) => (
-              <BrandDot
-                {...(p as { cx?: number; cy?: number; payload?: Datum })}
-              />
-            )}
-          />
+          {brandPositioned && (
+            <Scatter
+              data={[brand]}
+              isAnimationActive={false}
+              shape={(p: object) => (
+                <BrandDot
+                  {...(p as { cx?: number; cy?: number; payload?: Datum })}
+                />
+              )}
+            />
+          )}
         </ScatterChart>
       </ResponsiveContainer>
+      {(unpositioned.length > 0 || !brandPositioned) && (
+        <p className="px-2 pb-1 pt-2 text-xs leading-relaxed text-ink-faint">
+          Awaiting traffic data to position:{" "}
+          {[!brandPositioned ? brand.label : null, ...unpositioned.map((c) => c.label)]
+            .filter(Boolean)
+            .join(", ")}
+        </p>
+      )}
     </div>
   );
 }

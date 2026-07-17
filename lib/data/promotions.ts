@@ -128,13 +128,18 @@ export async function getPromotionsData(
 
   if (signals.length === 0) return null;
 
-  const competitorsWithPromos = new Set(signals.map((s) => s.competitorId)).size;
-  const newCount = signals.filter((s) => s.isNew).length;
+  // A cache row per competitor exists whether or not a promo was DETECTED — the
+  // stats must count only rows carrying a real promo signal (title present),
+  // otherwise "5 active promos" appears above a table showing one promo and
+  // four dashes.
+  const realPromos = signals.filter((s) => Boolean(s.promoTitle));
+  const competitorsWithPromos = new Set(realPromos.map((s) => s.competitorId)).size;
+  const newCount = realPromos.filter((s) => s.isNew).length;
 
   return {
     scanWeek,
     signals,
-    activeCount: signals.length,
+    activeCount: realPromos.length,
     newCount,
     competitorsWithPromos,
   };
