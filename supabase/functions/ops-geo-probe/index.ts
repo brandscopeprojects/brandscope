@@ -1,9 +1,7 @@
-// ops-geo-probe — TEMP diagnostic (DataForSEO support ticket). Posts real
-// ai_optimization LLM-response tasks for the async engines (ChatGPT/Claude/Gemini)
-// and returns their task IDs + the task_get status over a short poll window, so we
-// can (a) hand DataForSEO support concrete task IDs and (b) learn whether the tasks
-// are stuck in-queue vs. our task_get path being wrong. Self-contained (no _shared
-// imports) so it deploys as a single file. verify_jwt=false; CRON_SECRET-gated.
+// ops-geo-probe — TEMP diagnostic. v2: the async engines were rejected at
+// task_post with 40501 "Invalid Field: 'model_name'". This version (a) lists the
+// available model_name values per engine and (b) re-posts WITH a model_name and
+// polls task_get, to confirm the fix. Self-contained; CRON_SECRET-gated.
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -26,21 +24,21 @@ function dfsAuth(): string {
   return `Basic ${btoa(`${Deno.env.get("DATAFORSEO_LOGIN")}:${Deno.env.get("DATAFORSEO_PASSWORD")}`)}`;
 }
 
-async function dfs(method: "GET" | "POST", path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: unknown }> {
+async function dfs(method: "GET" | "POST", path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: any }> {
   const res = await fetch(`https://api.dataforseo.com/v3/${path}`, {
     method,
     headers: { Authorization: dfsAuth(), "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  let data: unknown = null;
+  let data: any = null;
   try { data = await res.json(); } catch { data = await res.text(); }
   return { ok: res.ok, status: res.status, data };
 }
 
 const ENGINES = [
-  { key: "chatgpt", segment: "chat_gpt" },
-  { key: "claude", segment: "claude" },
-  { key: "gemini", segment: "gemini" },
+  { key: "chatgpt", segment: "chat_gpt", fallback: "gpt-4o" },
+  { key: "claude", segment: "claude", fallback: "claude-3-5-sonnet" },
+  { key: "gemini", segment: "gemini", fallback: "gemini-1.5-pro" },
 ];
 const PROMPT = "What are the best online sports betting sites in Zambia?";
 
@@ -50,56 +48,56 @@ Deno.serve(async (req) => {
   if (!bearer || bearer !== Deno.env.get("CRON_SECRET")) return json({ error: "unauthorized" }, 401);
 
   const startTs = Date.now();
+  const out: Record<string, any> = {};
 
-  // 1. POST one llm_responses task per async engine; capture the task id + post status.
-  const posted: Record<string, { segment: string; task_id: string | null; post_status_code?: number; post_status_message?: string; cost?: number; http?: number; error?: string }> = {};
   for (const e of ENGINES) {
-    const r = await dfs("POST", `ai_optimization/${e.segment}/llm_responses/task_post`, [{ user_prompt: PROMPT }]);
-    const d = r.data as { cost?: number; tasks?: Array<{ id?: string; status_code?: number; status_message?: string }> };
-    const t = d?.tasks?.[0] ?? {};
-    posted[e.key] = {
-      segment: e.segment,
-      task_id: t.id ?? null,
-      post_status_code: t.status_code,
-      post_status_message: t.status_message,
-      cost: d?.cost,
-      http: r.status,
-    };
-  }
+    const rec: any = { segment: e.segment };
 
-  // 2. Poll task_get for ~75s. Try BOTH path variants ("/task_get/{id}" and
-  //    "/task_get/advanced/{id}") to detect a path mismatch vs. genuine in-queue.
-  const poll: Record<string, { get_status_code?: number; get_status_message?: string; has_result?: boolean; ready?: boolean; path_used?: string; elapsed_s?: number; error?: string }> = {};
-  const pending = new Map(Object.entries(posted).filter(([, p]) => p.task_id).map(([k, p]) => [k, p]));
-  const deadline = Date.now() + 75_000;
-  while (pending.size > 0 && Date.now() < deadline) {
-    await sleep(6_000);
-    for (const [k, p] of [...pending]) {
-      for (const variant of [`task_get/advanced/${p.task_id}`, `task_get/${p.task_id}`]) {
-        const r = await dfs("GET", `ai_optimization/${p.segment}/llm_responses/${variant}`);
-        if (!r.ok) { poll[k] = { ...poll[k], get_status_code: r.status, get_status_message: `HTTP ${r.status} on ${variant}`, path_used: variant, elapsed_s: Math.round((Date.now() - startTs) / 1000) }; continue; }
-        const d = r.data as { tasks?: Array<{ status_code?: number; status_message?: string; result?: unknown[] }> };
-        const t = d?.tasks?.[0] ?? {};
-        const hasResult = Array.isArray(t.result) && t.result.length > 0;
-        poll[k] = {
-          get_status_code: t.status_code,
-          get_status_message: t.status_message,
-          has_result: hasResult,
-          ready: t.status_code === 20000 || hasResult,
-          path_used: variant,
-          elapsed_s: Math.round((Date.now() - startTs) / 1000),
-        };
-        if (t.status_code === 20000 || hasResult) { pending.delete(k); break; }
+    // (a) List available models for this engine.
+    const models = await dfs("GET", `ai_optimization/${e.segment}/llm_responses/models`);
+    const modelItems = models.data?.tasks?.[0]?.result ?? models.data?.tasks?.[0]?.result?.[0]?.items ?? null;
+    rec.models_http = models.status;
+    rec.models_raw = models.data?.tasks?.[0]?.result ?? models.data?.tasks?.[0]?.status_message ?? null;
+
+    // Try to pull a concrete model_name string out of whatever shape it returns.
+    let modelName: string | null = null;
+    const flat = JSON.stringify(models.data ?? {});
+    const m = flat.match(/"model_name"\s*:\s*"([^"]+)"/) || flat.match(/"model"\s*:\s*"([^"]+)"/);
+    if (m) modelName = m[1];
+    if (Array.isArray(modelItems) && modelItems.length && typeof modelItems[0] === "string") modelName = modelItems[0];
+    if (!modelName) modelName = e.fallback; // models endpoint path may differ; attempt a known model
+    rec.model_name_used = modelName;
+
+    // (b) Re-post WITH model_name (if we found one) + poll.
+    if (modelName) {
+      const post = await dfs("POST", `ai_optimization/${e.segment}/llm_responses/task_post`, [
+        { user_prompt: PROMPT, model_name: modelName },
+      ]);
+      const t = post.data?.tasks?.[0] ?? {};
+      rec.post_status_code = t.status_code;
+      rec.post_status_message = t.status_message;
+      rec.post_cost = post.data?.cost;
+      rec.task_id = t.id ?? null;
+
+      if (t.id && (t.status_code === 20100 || t.status_code === 20000)) {
+        for (let i = 0; i < 12 && Date.now() - startTs < 80_000; i++) {
+          await sleep(6_000);
+          const g = await dfs("GET", `ai_optimization/${e.segment}/llm_responses/task_get/advanced/${t.id}`);
+          const gt = g.data?.tasks?.[0] ?? {};
+          const hasResult = Array.isArray(gt.result) && gt.result.length > 0;
+          rec.get_status_code = gt.status_code;
+          rec.get_status_message = gt.status_message;
+          rec.has_result = hasResult;
+          rec.elapsed_s = Math.round((Date.now() - startTs) / 1000);
+          if (gt.status_code === 20000 || hasResult) {
+            rec.answer_sample = JSON.stringify(gt.result?.[0] ?? gt).slice(0, 400);
+            break;
+          }
+        }
       }
     }
+    out[e.key] = rec;
   }
-  for (const [k] of pending) if (!poll[k]?.ready) poll[k] = { ...poll[k], ready: false };
 
-  return json({
-    note: "DataForSEO ai_optimization llm_responses async-engine probe",
-    prompt: PROMPT,
-    posted,
-    poll,
-    total_elapsed_s: Math.round((Date.now() - startTs) / 1000),
-  });
+  return json({ note: "GEO probe v2 — discover model_name + confirm fix", prompt: PROMPT, engines: out, total_elapsed_s: Math.round((Date.now() - startTs) / 1000) });
 });
