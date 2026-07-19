@@ -18,6 +18,7 @@
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
+import { withMeter, setMeterCtx } from "../_shared/spend.ts";
 import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { type ScanModuleMessage } from "../_shared/contracts.ts";
@@ -32,7 +33,7 @@ const SYNTHESIS_FN = "synthesis-draft-audit";
 // Markets the regulatory corpus covers at MVP (mvp-module-sources.md §7).
 const SUPPORTED_MARKETS = new Set(["nigeria", "kenya", "south_africa"]);
 
-Deno.serve(async (req) => {
+Deno.serve(withMeter(async (req) => {
   const pf = preflight(req);
   if (pf) return pf;
   if (!isAuthorizedInternal(req)) return json({ error: "unauthorized" }, 401);
@@ -48,6 +49,7 @@ Deno.serve(async (req) => {
   }
 
   const sb = serviceClient();
+  setMeterCtx({ sb, organisation_id: msg.organisation_id ?? null, brand_id: msg.brand_id, scan_job_id: msg.scan_job_id, task_type: msg.task_type });
   const deadline = Date.now() + TIME_BUDGET_MS;
   const requestedMarkets = (msg.markets ?? []).map((m) => m.toLowerCase());
   // NO Nigeria fallback: scoring a brand from an unsupported market against
@@ -210,4 +212,4 @@ Deno.serve(async (req) => {
     }
     return json({ ok: false, error: message }, 500);
   }
-});
+}));

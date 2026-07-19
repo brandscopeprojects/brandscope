@@ -475,3 +475,29 @@ additively so different competitor sets dedupe provider spend. Helper:
 `weekly_cache.raw_data jsonb` (additive) carries the score-basis honesty flags
 `{ reach_basis, sov_basis }` per scoring-formulas §1/§4 amendments;
 `competitor_states` elements gain optional `reachBasis`.
+
+## D.9 `provider_spend` + `provider_budget_config` (owner-approved 2026-07-19)
+
+Migration 17. DataForSEO spend metering + a per-organisation cost cap.
+
+- **`provider_spend`** (Class-2, RLS on, no policies): one row per module per scan
+  capturing DataForSEO's response `cost` (USD), attributed to
+  `(organisation_id, brand_id, scan_job_id, task_type, provider, cost_usd,
+  spend_date)`. Written by `_shared/spend.ts` (`recordProviderSpend`), which the
+  `withMeter` request wrapper calls once when a researcher settles. Spend is
+  captured at the single client chokepoint (`dfsPost`/`dfsGet` → `addSpend`,
+  accumulated per-request via `AsyncLocalStorage` so concurrent modules on one
+  warm isolate never co-mingle costs).
+- **`provider_budget_config`** (Class-2, RLS on, no policies): one global default
+  row (`organisation_id IS NULL`) plus optional per-org overrides. Columns
+  `daily_cap_usd` (default **$3**), `balance_floor_usd` (default **$10**),
+  `enabled`. Seeded global default: `(NULL, 'dataforseo', 3, 10, true)`.
+- **Rollup**: `scan_jobs.total_cost_usd` is incremented atomically per module via
+  `app_increment_scan_cost(uuid, numeric)` (SECURITY DEFINER, service_role only).
+- **Enforcement** (brand-scan, only when `toRun > 0` — cached re-scans cost $0 and
+  are never blocked): `checkBudget` gates on (a) live DataForSEO balance < floor
+  and (b) org's spend-today ≥ daily cap. On breach the scan is **hard-failed**
+  (job → `failed`, `feature_health_logs` category `cost_governance`, 402 response).
+  Fail-open: any config/read error lets scanning proceed — the cap is a guardrail,
+  not a new single point of failure. Helpers: `_shared/spend.ts`,
+  `fetchDfsBalance()` in `_shared/dataforseo.ts`.

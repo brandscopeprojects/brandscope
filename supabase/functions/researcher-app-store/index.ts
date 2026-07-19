@@ -18,6 +18,7 @@
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
+import { withMeter, setMeterCtx } from "../_shared/spend.ts";
 import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { type ScanModuleMessage, type CompetitorRef } from "../_shared/contracts.ts";
@@ -38,7 +39,7 @@ import {
 const MODULE_BUDGET_MS = 85_000; // keep inside the 90s module timeout
 const REVIEW_CAP = 200; // ~200 reviews/competitor (mvp-module-sources.md §5)
 
-Deno.serve(async (req) => {
+Deno.serve(withMeter(async (req) => {
   const pf = preflight(req);
   if (pf) return pf;
   if (!isAuthorizedInternal(req)) return json({ error: "unauthorized" }, 401);
@@ -54,6 +55,7 @@ Deno.serve(async (req) => {
   if (!msg?.scan_job_id || !msg?.brand_id || msg.task_type !== "app_store") {
     return json({ error: "expected ScanModuleMessage with task_type 'app_store'" }, 400);
   }
+  setMeterCtx({ sb, organisation_id: msg.organisation_id ?? null, brand_id: msg.brand_id, scan_job_id: msg.scan_job_id, task_type: msg.task_type });
 
   const deadline = Date.now() + MODULE_BUDGET_MS;
   const competitors = msg.competitors ?? [];
@@ -127,7 +129,7 @@ Deno.serve(async (req) => {
     } catch (_e) { /* best-effort */ }
     return json({ ok: false, error: message }, 500);
   }
-});
+}));
 
 /**
  * One competitor: discover its Google-Play app, pull reviews + info + vertical

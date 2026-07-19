@@ -20,6 +20,7 @@
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
+import { withMeter, setMeterCtx } from "../_shared/spend.ts";
 import { completeModule, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import type { ScanModuleMessage } from "../_shared/contracts.ts";
@@ -38,7 +39,7 @@ import {
 // Bounded poll window for the three task_post engines, well under the 90s budget.
 const ENGINE_MAX_WAIT_MS = 60_000;
 
-Deno.serve(async (req) => {
+Deno.serve(withMeter(async (req) => {
   const pf = preflight(req);
   if (pf) return pf;
   if (!isAuthorizedInternal(req)) return json({ error: "unauthorized" }, 401);
@@ -57,6 +58,7 @@ Deno.serve(async (req) => {
   if (msg.task_type !== "geo_aeo") {
     return json({ error: `wrong task_type for researcher-geo-aeo: ${msg.task_type}` }, 400);
   }
+  setMeterCtx({ sb, organisation_id: msg.organisation_id ?? null, brand_id: msg.brand_id, scan_job_id: msg.scan_job_id, task_type: msg.task_type });
 
   const market = msg.markets?.[0] ?? "nigeria";
 
@@ -215,7 +217,7 @@ Deno.serve(async (req) => {
     }
     return json({ ok: false, error: message }, 500);
   }
-});
+}));
 
 /**
  * Record the module outcome on scan_jobs; if this call completed the fan-out,

@@ -18,6 +18,9 @@ import {
   invokeFunction,
 } from "../_shared/scan.ts";
 import { MODULE_FUNCTION, MVP_MODULES, type CompetitorRef, type ScanModuleMessage } from "../_shared/contracts.ts";
+import { fetchDfsBalance } from "../_shared/dataforseo.ts";
+import { checkBudget } from "../_shared/spend.ts";
+import { recordFeatureHealth } from "../_shared/logging.ts";
 
 // Module → its cache table. A module is "fresh" when that table already holds a
 // row for this (brand, scan_week). tech_stack_cache has no brand_id (keyed by
@@ -109,7 +112,7 @@ Deno.serve(async (req) => {
     // 1b. Load the brand.
     const { data: brand, error: brandError } = await sb
       .from("brands")
-      .select("id, name, domain, market, tier, industry")
+      .select("id, name, domain, market, tier, industry, organisation_id")
       .eq("id", brandId)
       .single();
     if (brandError || !brand) {
@@ -230,6 +233,7 @@ Deno.serve(async (req) => {
     const base = {
       scan_job_id: scanJobId,
       brand_id: brandId,
+      organisation_id: brand.organisation_id ?? null,
       brand_domain: brand.domain,
       brand_name: brand.name,
       scan_week: job.scan_week,
@@ -251,6 +255,45 @@ Deno.serve(async (req) => {
         scan_week: job.scan_week,
       });
       return json({ ok: true, modules: 0, skipped_fresh: modules.length });
+    }
+
+    // 2c. SPEND CAP (cost control, migration 17): this scan WILL hit DataForSEO
+    // (toRun > 0). Gate on the org's daily spend cap and the account balance floor
+    // BEFORE dispatching researchers. Fail-open inside checkBudget — a config/read
+    // problem never blocks scanning; only a real breach does. Enforcement = hard-fail
+    // (owner decision 2026-07-19): mark the job failed so it does not silently retry.
+    const liveBalance = await fetchDfsBalance();
+    const budget = await checkBudget(sb, {
+      organisationId: brand.organisation_id ?? null,
+      liveBalance,
+    });
+    if (!budget.allowed) {
+      await setScanStatus(sb, scanJobId, "failed", {
+        error_message: `spend cap reached: ${budget.reason}`,
+        completed_at: new Date().toISOString(),
+      });
+      await recordFeatureHealth(sb, {
+        scan_job_id: scanJobId,
+        brand_id: brandId,
+        scan_week: job.scan_week,
+        feature_category: "cost_governance",
+        feature_name: "DataForSEO spend cap",
+        status: "failed",
+        root_cause: budget.reason ?? "spend cap reached",
+        resolution_suggested:
+          "Raise the org's daily_cap_usd / lower balance_floor_usd in provider_budget_config, or top up DataForSEO, then re-trigger.",
+      });
+      return json(
+        {
+          ok: false,
+          error: `spend cap reached: ${budget.reason}`,
+          daily_cap_usd: budget.dailyCap,
+          spent_today_usd: budget.spentToday,
+          balance_floor_usd: budget.balanceFloor,
+          live_balance_usd: budget.liveBalance,
+        },
+        402,
+      );
     }
 
     await setScanStatus(sb, scanJobId, "running", {

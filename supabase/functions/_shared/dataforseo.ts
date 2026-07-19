@@ -4,6 +4,7 @@
 // endpoints require polling tasks_ready + task_get/{id}.
 
 import { requireEnv, optionalEnv } from "./env.ts";
+import { addSpend } from "./spend.ts";
 
 const BASE = "https://api.dataforseo.com/v3/";
 
@@ -38,7 +39,10 @@ export async function dfsPost<T = unknown>(path: string, tasks: unknown[]): Prom
     body: JSON.stringify(tasks),
   });
   if (!res.ok) throw new Error(`DataForSEO ${path} ${res.status}: ${await res.text()}`);
-  return (await res.json()) as T;
+  const body = (await res.json()) as T;
+  // Meter spend: DataForSEO returns a top-level `cost` (USD) on every response.
+  addSpend((body as { cost?: unknown } | null)?.cost);
+  return body;
 }
 
 /** GET a DataForSEO endpoint (task_get / tasks_ready). */
@@ -48,7 +52,26 @@ export async function dfsGet<T = unknown>(path: string): Promise<T> {
     headers: { Authorization: authHeader() },
   });
   if (!res.ok) throw new Error(`DataForSEO ${path} ${res.status}: ${await res.text()}`);
-  return (await res.json()) as T;
+  const body = (await res.json()) as T;
+  addSpend((body as { cost?: unknown } | null)?.cost);
+  return body;
+}
+
+/**
+ * Live DataForSEO account balance (USD) via appendix/user_data — a free call
+ * (cost 0). Returns null on any error so the caller can fail-open. Used by the
+ * spend cap's balance floor. Not metered against a scan (called off-ALS-context).
+ */
+export async function fetchDfsBalance(): Promise<number | null> {
+  try {
+    const body = await dfsGet<{
+      tasks?: Array<{ result?: Array<{ money?: { balance?: number } }> }>;
+    }>("appendix/user_data");
+    const bal = body.tasks?.[0]?.result?.[0]?.money?.balance;
+    return typeof bal === "number" ? bal : null;
+  } catch (_e) {
+    return null;
+  }
 }
 
 // ── Market → DataForSEO Google location_code ──────────────────────────────────

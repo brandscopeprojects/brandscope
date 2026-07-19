@@ -23,6 +23,7 @@
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
+import { withMeter, setMeterCtx } from "../_shared/spend.ts";
 import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import type { ScanModuleMessage, ScanSynthesisMessage, CompetitorRef } from "../_shared/contracts.ts";
@@ -197,7 +198,7 @@ async function upsertCustomerRow(
   if (error) throw new Error(`upsert customer_intel_cache: ${error.message}`);
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withMeter(async (req) => {
   const pf = preflight(req);
   if (pf) return pf;
   if (!isAuthorizedInternal(req)) return json({ error: "unauthorized" }, 401);
@@ -216,6 +217,7 @@ Deno.serve(async (req) => {
       400,
     );
   }
+  setMeterCtx({ sb, organisation_id: msg.organisation_id ?? null, brand_id: msg.brand_id, scan_job_id: msg.scan_job_id, task_type: msg.task_type });
 
   const deadline = Date.now() + MODULE_BUDGET_MS;
   const competitors = Array.isArray(msg.competitors) ? msg.competitors : [];
@@ -323,4 +325,4 @@ Deno.serve(async (req) => {
     }
     return json({ ok: false, error: message }, 500);
   }
-});
+}));

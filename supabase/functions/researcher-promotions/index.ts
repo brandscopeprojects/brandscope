@@ -15,6 +15,7 @@
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
+import { withMeter, setMeterCtx } from "../_shared/spend.ts";
 import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { sha256 } from "../_shared/evidence.ts";
@@ -36,7 +37,7 @@ const MODULE = "promotions" as const;
 // Overall wall-clock guard — leave headroom under the 90s module budget.
 const TIME_BUDGET_MS = 80_000;
 
-Deno.serve(async (req: Request): Promise<Response> => {
+Deno.serve(withMeter(async (req: Request): Promise<Response> => {
   const pre = preflight(req);
   if (pre) return pre;
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -59,6 +60,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const sb = serviceClient();
+  setMeterCtx({ sb, organisation_id: msg.organisation_id ?? null, brand_id: msg.brand_id, scan_job_id: msg.scan_job_id, task_type: msg.task_type });
   const competitors = Array.isArray(msg.competitors) ? msg.competitors : [];
   const location = locationCode(msg.markets);
   const deadline = Date.now() + TIME_BUDGET_MS;
@@ -126,7 +128,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
     return json({ ok: false, module: MODULE, error: message }, 500);
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Per-competitor pipeline: DataForSEO signals → Haiku classify → UPSERT.

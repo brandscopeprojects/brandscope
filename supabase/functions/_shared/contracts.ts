@@ -67,6 +67,7 @@ export type CompetitorRef = { id: string; name: string; domain: string; tier: st
 export type ScanModuleMessage = {
   scan_job_id: string;
   brand_id: string;
+  organisation_id?: string | null; // brand's org — for per-org spend metering (migration 17)
   brand_domain: string;
   brand_name: string;
   scan_week: string; // YYYY-MM-DD (Monday)

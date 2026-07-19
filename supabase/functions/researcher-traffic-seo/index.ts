@@ -16,6 +16,7 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
+import { withMeter, setMeterCtx } from "../_shared/spend.ts";
 import { MODELS, type ScanModuleMessage, type CompetitorRef } from "../_shared/contracts.ts";
 import { completeModule, invokeFunction, enqueueSynthesis } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
@@ -63,13 +64,14 @@ type CompetitorSeoResult = {
   evidence: unknown[];
 };
 
-Deno.serve(async (req) => {
+Deno.serve(withMeter(async (req) => {
   const pf = preflight(req);
   if (pf) return pf;
   if (!isAuthorizedInternal(req)) return json({ error: "unauthorized" }, 401);
 
   const sb = serviceClient();
   const msg = (await req.json()) as ScanModuleMessage;
+  setMeterCtx({ sb, organisation_id: msg.organisation_id ?? null, brand_id: msg.brand_id, scan_job_id: msg.scan_job_id, task_type: msg.task_type });
 
   try {
     const location = locationCode(msg.markets);
@@ -230,7 +232,7 @@ Deno.serve(async (req) => {
     }
     return json({ ok: false }, 200);
   }
-});
+}));
 
 // ── per-competitor fetch + structure ─────────────────────────────────────────
 async function fetchCompetitorSeo(
