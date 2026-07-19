@@ -19,6 +19,51 @@ import {
 } from "../_shared/scan.ts";
 import { MODULE_FUNCTION, MVP_MODULES, type CompetitorRef, type ScanModuleMessage } from "../_shared/contracts.ts";
 
+// Module → its cache table. A module is "fresh" when that table already holds a
+// row for this (brand, scan_week). tech_stack_cache has no brand_id (keyed by
+// competitor), so it is checked via the brand's competitor ids.
+const CACHE_TABLE_BY_MODULE: Record<string, { table: string; byCompetitor?: boolean }> = {
+  traffic_seo: { table: "seo_cache" },
+  geo_aeo: { table: "geo_cache" },
+  promotions: { table: "promotions_cache" },
+  customer: { table: "customer_intel_cache" },
+  regulatory: { table: "regulatory_cache" },
+  hiring: { table: "hiring_signals_cache" },
+  app_store: { table: "product_intel_cache" },
+  tech_stack: { table: "tech_stack_cache", byCompetitor: true },
+};
+
+/** Subset of `modules` whose cache already has data for this (brand, scan_week). */
+async function modulesWithFreshCache(
+  sb: ReturnType<typeof serviceClient>,
+  brandId: string,
+  scanWeek: string,
+  modules: string[],
+  competitorIds: string[],
+): Promise<Set<string>> {
+  const fresh = new Set<string>();
+  await Promise.all(
+    modules.map(async (m) => {
+      const meta = CACHE_TABLE_BY_MODULE[m];
+      if (!meta) return; // unknown module → never skip (safe default: re-run)
+      try {
+        let q = sb.from(meta.table).select("*", { count: "exact", head: true }).eq("scan_week", scanWeek);
+        if (meta.byCompetitor) {
+          if (competitorIds.length === 0) return; // nothing to check → run it
+          q = q.in("competitor_id", competitorIds);
+        } else {
+          q = q.eq("brand_id", brandId);
+        }
+        const { count } = await q;
+        if ((count ?? 0) > 0) fresh.add(m);
+      } catch (_e) {
+        // any read problem → treat as not-fresh (safe: we re-fetch rather than skip)
+      }
+    }),
+  );
+  return fresh;
+}
+
 Deno.serve(async (req) => {
   const pf = preflight(req);
   if (pf) return pf;
@@ -36,7 +81,7 @@ Deno.serve(async (req) => {
 
   const sb = serviceClient();
 
-  let body: { scan_job_id?: string; brand_id?: string };
+  let body: { scan_job_id?: string; brand_id?: string; force_refresh?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -44,6 +89,7 @@ Deno.serve(async (req) => {
   }
   const scanJobId = body.scan_job_id;
   const brandId = body.brand_id;
+  const forceRefresh = body.force_refresh === true;
   if (!scanJobId || !brandId) {
     return json({ error: "scan_job_id and brand_id are required" }, 400);
   }
@@ -170,11 +216,15 @@ Deno.serve(async (req) => {
       });
       return json({ ok: false, error: "all modules paused by kill switches" }, 409);
     }
-    await setScanStatus(sb, scanJobId, "running", {
-      expected_modules: modules as string[],
-      started_at: new Date().toISOString(),
-      progress_percentage: 0,
-    });
+    // 2b. SKIP-IF-FRESH (cost control): a module whose cache already holds data
+    // for this (brand, scan_week) does NOT need to re-hit DataForSEO — re-scans
+    // and DLQ retries were re-buying data we already own. Only modules WITHOUT
+    // fresh cache get dispatched. `force_refresh` overrides (deliberate re-fetch).
+    const competitorIds = competitors.map((c) => c.id);
+    const freshModules = forceRefresh
+      ? new Set<string>()
+      : await modulesWithFreshCache(sb, brandId, job.scan_week, modules, competitorIds);
+    const toRun = modules.filter((m) => !freshModules.has(m));
 
     // 3. Shared message base for every module.
     const base = {
@@ -187,10 +237,32 @@ Deno.serve(async (req) => {
       competitors,
     };
 
-    // 4. For each module: enqueue (durable) AND directly invoke the researcher.
-    // A brand with zero competitors still fans out — competitor-dependent modules
-    // no-op gracefully (data-flow-rules.md §4 partial handling).
-    for (const task of modules) {
+    // All modules already fresh → skip every researcher (zero DataForSEO spend)
+    // and go straight to synthesis, which regenerates the plan from cached data.
+    if (toRun.length === 0) {
+      await setScanStatus(sb, scanJobId, "running", {
+        expected_modules: [] as string[],
+        started_at: new Date().toISOString(),
+        progress_percentage: 50,
+      });
+      invokeFunction("synthesis-draft-audit", {
+        scan_job_id: scanJobId,
+        brand_id: brandId,
+        scan_week: job.scan_week,
+      });
+      return json({ ok: true, modules: 0, skipped_fresh: modules.length });
+    }
+
+    await setScanStatus(sb, scanJobId, "running", {
+      expected_modules: toRun as string[],
+      started_at: new Date().toISOString(),
+      progress_percentage: 0,
+    });
+
+    // 4. For each module that needs fresh data: enqueue (durable) AND directly
+    // invoke the researcher. Fresh modules are skipped — cache-population reads
+    // ALL cache tables for (brand, week), so their existing data still flows in.
+    for (const task of toRun) {
       const msg: ScanModuleMessage = { ...base, task_type: task };
       await enqueueModule(sb, msg);
       await invokeFunction(MODULE_FUNCTION[task], msg);
@@ -198,7 +270,7 @@ Deno.serve(async (req) => {
 
     // 5. Return immediately — do NOT wait. Researchers drive completion →
     // synthesis via completeModule.
-    return json({ ok: true, modules: modules.length });
+    return json({ ok: true, modules: toRun.length, skipped_fresh: modules.length - toRun.length });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     // Fatal decomposition failure → mark the job failed (auto-retry handled by the
