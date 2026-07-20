@@ -168,7 +168,7 @@ export async function getKnowledgeBaseData(): Promise<KnowledgeBaseData> {
     country: d.country,
     regulatoryBody: d.regulatory_body,
     version: d.version,
-    sourceUrl: d.source_url,
+    sourceUrl: d.source_url ?? "",
     isActive: d.is_active ?? false,
     chunkCount: chunkCounts[i],
     embeddingStatus: embeddingStatusTone(d.embedding_status),

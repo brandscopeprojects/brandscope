@@ -1751,6 +1751,41 @@ export type Database = {
           },
         ]
       }
+      hq_agent_config: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          status: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          config: Json
+          created_at?: string
+          id?: string
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hq_agent_config_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hq_agent_memory: {
         Row: {
           content: string
@@ -1828,9 +1863,12 @@ export type Database = {
           created_at: string
           feedback_note: string | null
           id: string
+          metadata: Json | null
+          modality: string
           model: string | null
           reaction: string | null
           role: string
+          status: string
           tools_used: Json | null
         }
         Insert: {
@@ -1839,9 +1877,12 @@ export type Database = {
           created_at?: string
           feedback_note?: string | null
           id?: string
+          metadata?: Json | null
+          modality?: string
           model?: string | null
           reaction?: string | null
           role: string
+          status?: string
           tools_used?: Json | null
         }
         Update: {
@@ -1850,9 +1891,12 @@ export type Database = {
           created_at?: string
           feedback_note?: string | null
           id?: string
+          metadata?: Json | null
+          modality?: string
           model?: string | null
           reaction?: string | null
           role?: string
+          status?: string
           tools_used?: Json | null
         }
         Relationships: [
@@ -1861,6 +1905,73 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "hq_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hq_tool_runs: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          data_updated_at: string | null
+          duration_ms: number | null
+          error_text: string | null
+          id: string
+          message_id: string | null
+          metadata: Json | null
+          modality: string
+          profile_id: string | null
+          success: boolean
+          tool_name: string
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          data_updated_at?: string | null
+          duration_ms?: number | null
+          error_text?: string | null
+          id?: string
+          message_id?: string | null
+          metadata?: Json | null
+          modality?: string
+          profile_id?: string | null
+          success?: boolean
+          tool_name: string
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          data_updated_at?: string | null
+          duration_ms?: number | null
+          error_text?: string | null
+          id?: string
+          message_id?: string | null
+          metadata?: Json | null
+          modality?: string
+          profile_id?: string | null
+          success?: boolean
+          tool_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hq_tool_runs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "hq_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hq_tool_runs_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "hq_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hq_tool_runs_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1905,6 +2016,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      market_intel_cache: {
+        Row: {
+          fetched_at: string
+          kind: string
+          market: string
+          payload: Json
+          scan_week: string
+        }
+        Insert: {
+          fetched_at?: string
+          kind: string
+          market: string
+          payload: Json
+          scan_week: string
+        }
+        Update: {
+          fetched_at?: string
+          kind?: string
+          market?: string
+          payload?: Json
+          scan_week?: string
+        }
+        Relationships: []
       }
       model_router_config: {
         Row: {
@@ -2387,6 +2522,75 @@ export type Database = {
           },
         ]
       }
+      provider_budget_config: {
+        Row: {
+          balance_floor_usd: number
+          created_at: string
+          daily_cap_usd: number
+          enabled: boolean
+          id: string
+          organisation_id: string | null
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          balance_floor_usd?: number
+          created_at?: string
+          daily_cap_usd?: number
+          enabled?: boolean
+          id?: string
+          organisation_id?: string | null
+          provider?: string
+          updated_at?: string
+        }
+        Update: {
+          balance_floor_usd?: number
+          created_at?: string
+          daily_cap_usd?: number
+          enabled?: boolean
+          id?: string
+          organisation_id?: string | null
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      provider_spend: {
+        Row: {
+          brand_id: string | null
+          cost_usd: number
+          created_at: string
+          id: string
+          organisation_id: string | null
+          provider: string
+          scan_job_id: string | null
+          spend_date: string
+          task_type: string | null
+        }
+        Insert: {
+          brand_id?: string | null
+          cost_usd?: number
+          created_at?: string
+          id?: string
+          organisation_id?: string | null
+          provider?: string
+          scan_job_id?: string | null
+          spend_date?: string
+          task_type?: string | null
+        }
+        Update: {
+          brand_id?: string | null
+          cost_usd?: number
+          created_at?: string
+          id?: string
+          organisation_id?: string | null
+          provider?: string
+          scan_job_id?: string | null
+          spend_date?: string
+          task_type?: string | null
+        }
+        Relationships: []
+      }
       rbac_config: {
         Row: {
           allowed: boolean
@@ -2621,7 +2825,7 @@ export type Database = {
           r2_path: string
           regulatory_body: string
           review_notes: string | null
-          source_url: string
+          source_url: string | null
           superseded_by: string | null
           updated_at: string | null
           version: string | null
@@ -2644,7 +2848,7 @@ export type Database = {
           r2_path: string
           regulatory_body: string
           review_notes?: string | null
-          source_url: string
+          source_url?: string | null
           superseded_by?: string | null
           updated_at?: string | null
           version?: string | null
@@ -2667,7 +2871,7 @@ export type Database = {
           r2_path?: string
           regulatory_body?: string
           review_notes?: string | null
-          source_url?: string
+          source_url?: string | null
           superseded_by?: string | null
           updated_at?: string | null
           version?: string | null
@@ -3265,6 +3469,7 @@ export type Database = {
           promo_changes_this_week: number | null
           promotions_data: Json | null
           radar_data: Json | null
+          raw_data: Json | null
           reach_score: number | null
           regulatory_data: Json | null
           scan_job_id: string | null
@@ -3298,6 +3503,7 @@ export type Database = {
           promo_changes_this_week?: number | null
           promotions_data?: Json | null
           radar_data?: Json | null
+          raw_data?: Json | null
           reach_score?: number | null
           regulatory_data?: Json | null
           scan_job_id?: string | null
@@ -3331,6 +3537,7 @@ export type Database = {
           promo_changes_this_week?: number | null
           promotions_data?: Json | null
           radar_data?: Json | null
+          raw_data?: Json | null
           reach_score?: number | null
           regulatory_data?: Json | null
           scan_job_id?: string | null
@@ -3367,6 +3574,10 @@ export type Database = {
     }
     Functions: {
       app_get_cron_secret: { Args: never; Returns: string }
+      app_increment_scan_cost: {
+        Args: { p_delta: number; p_scan_job_id: string }
+        Returns: undefined
+      }
       app_pgmq_archive: {
         Args: { p_msg_id: number; p_queue: string }
         Returns: boolean
@@ -3382,6 +3593,7 @@ export type Database = {
         Args: { p_message: Json; p_queue: string }
         Returns: number
       }
+      app_reconcile_synthesis: { Args: never; Returns: number }
       app_scan_complete_module: {
         Args: { p_outcome: string; p_scan_job_id: string; p_task: string }
         Returns: boolean

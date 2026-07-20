@@ -309,7 +309,7 @@ export async function getRegulatoryData(): Promise<RegulatoryData | null> {
       documentType: d.document_type,
       regulatoryBody: d.regulatory_body,
       country: d.country,
-      sourceUrl: d.source_url,
+      sourceUrl: d.source_url ?? "",
       version: d.version,
       effectiveDate: d.effective_date,
       lastVerifiedAt: d.last_verified_at,
