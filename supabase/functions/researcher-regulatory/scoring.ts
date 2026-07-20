@@ -48,7 +48,7 @@ const DEGRADED_ASSESSMENTS: DimensionAssessment[] = DIMENSIONS.map((d) => ({
 }));
 
 // Slot researcher:regulatory — DB-active prompt_versions row overrides this code default.
-export const REGULATORY_SYSTEM = `You are Brandscope's Regulatory Compliance Researcher for iGaming brands in Nigeria, Kenya, and South Africa. You assess a competitor's compliance against regulator requirements using ONLY the provided regulator-document excerpts and the competitor's own site text. You MUST cite a VERBATIM quote (copied exactly, no paraphrase) and the document/section for any 'non_compliant' or 'partial' finding. If the excerpts do not contain enough evidence to judge a dimension, return status 'unknown' with quote null — NEVER guess, NEVER invent a quote, url, or requirement. Output STRICT JSON only.`;
+export const REGULATORY_SYSTEM = `You are Brandscope's Regulatory Compliance Researcher for iGaming brands. You assess a competitor's compliance against the regulator requirements for the stated market, using ONLY the provided regulator-document excerpts for that market. You MUST cite a VERBATIM quote (copied exactly from an excerpt, no paraphrase) and the document/section for any 'non_compliant' or 'partial' finding. If the excerpts do not contain enough evidence to judge a dimension, return status 'unknown' with quote null — NEVER guess, NEVER invent a quote, url, or requirement, NEVER apply another jurisdiction's rules. Output STRICT JSON only.`;
 
 /**
  * Assess all 6 dimensions for one competitor in one market. Retrieves chunks per
@@ -184,7 +184,12 @@ function normaliseAssessments(
     let sourceUrl: string | null = null;
     let documentRef: string | null = null;
     if (rawQuote) {
-      const match = rows.find((row) => row.quote.includes(rawQuote));
+      // Grounding check, tolerant of whitespace/newline differences between the
+      // PDF-extracted chunk (unpdf emits ragged spacing) and the model's cleaned
+      // reproduction, and of a short model-added prefix/suffix. Still a real check:
+      // a substantial contiguous run of the quote MUST exist in the chunk.
+      const nq = normWs(rawQuote);
+      const match = rows.find((row) => groundedIn(normWs(row.quote), nq));
       if (match) {
         quote = rawQuote;
         sourceUrl = match.sourceUrl;
@@ -211,6 +216,28 @@ function normaliseAssessments(
       description,
     };
   });
+}
+
+/** Collapse all runs of whitespace to a single space and trim. */
+function normWs(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Is the model's (normalised) quote genuinely grounded in the (normalised) chunk?
+ * Exact containment first; otherwise require a long contiguous overlap so a short
+ * model-added label/prefix doesn't reject an otherwise-verbatim quote — while a
+ * hallucinated quote (no real overlap) is still rejected.
+ */
+function groundedIn(chunkNorm: string, quoteNorm: string): boolean {
+  if (!quoteNorm) return false;
+  if (chunkNorm.includes(quoteNorm)) return true;
+  const W = 60;
+  if (quoteNorm.length <= W) return false;
+  for (let i = 0; i + W <= quoteNorm.length; i += 20) {
+    if (chunkNorm.includes(quoteNorm.slice(i, i + W))) return true;
+  }
+  return false;
 }
 
 function coerceStatus(v: unknown): DimensionAssessment["status"] {
