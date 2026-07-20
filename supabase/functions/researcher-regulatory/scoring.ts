@@ -19,7 +19,7 @@ import type { SupabaseClient } from "../_shared/supabase.ts";
 import { DIMENSIONS, type DimensionKey, type DimensionAssessment, type Violation } from "./types.ts";
 import { retrieveChunks } from "./rag.ts";
 
-const PROMPT_VERSION = "regulatory-v2";
+const PROMPT_VERSION = "regulatory-v3";
 
 // Whether this run has OBSERVED the operator's own site/practices. Until the
 // competitor-evidence build lands (Issue B), the module only has the law, so it
@@ -53,7 +53,7 @@ const DEGRADED_ASSESSMENTS: DimensionAssessment[] = DIMENSIONS.map((d) => ({
 }));
 
 // Slot researcher:regulatory — DB-active prompt_versions row overrides this code default.
-export const REGULATORY_SYSTEM = `You are Brandscope's Regulatory Compliance Researcher for iGaming brands. You are given a market's REGULATOR REQUIREMENTS (law/guideline excerpts) — you are NOT given the operator's actual website or practices. For each dimension: identify the requirement and cite a VERBATIM quote (copied exactly from an excerpt, no paraphrase) plus the document/section. Because you cannot observe whether the operator actually complies, you MUST return status 'unknown' UNLESS an excerpt itself explicitly documents a specific violation by THIS named operator. NEVER infer 'non_compliant' or 'partial' from the existence of a rule, from missing information, or from the operator not being mentioned. Put the requirement in one factual sentence in 'description'. NEVER invent a quote, url, or requirement; NEVER apply another jurisdiction's rules. Output STRICT JSON only.`;
+export const REGULATORY_SYSTEM = `You are Brandscope's Regulatory Compliance Researcher for iGaming brands. You are given a market's REGULATOR REQUIREMENTS (law/guideline excerpts) — you are NOT given the operator's actual website or practices. For each dimension, ALWAYS cite the requirement: copy a VERBATIM quote of the relevant rule (exactly from one of that dimension's excerpts, no paraphrase) plus its document/section reference. The quote documents the LAW, not the operator, so provide it whenever an excerpt for that dimension exists — only use null when no excerpt was supplied for that dimension. Because you cannot observe whether the operator actually complies, you MUST return status 'unknown' UNLESS an excerpt itself explicitly documents a specific violation by THIS named operator. NEVER infer 'non_compliant' or 'partial' from the existence of a rule, from missing information, or from the operator not being mentioned. In 'description', state in one factual sentence what the regulator requires for that dimension. NEVER invent a quote, url, or requirement; NEVER apply another jurisdiction's rules. Output STRICT JSON only.`;
 
 /**
  * Assess all 6 dimensions for one competitor in one market. Retrieves chunks per
@@ -115,12 +115,14 @@ export async function assessCompetitor(
     "",
     "Assess EACH of the 6 dimensions below using only the regulator excerpts.",
     "For each dimension return:",
-    '  status: "compliant" | "partial" | "non_compliant" | "unknown"',
-    "  quote: a VERBATIM substring copied from one of that dimension's excerpts that",
-    "         grounds your finding, or null if status is unknown/compliant-with-no-issue.",
+    '  status: "compliant" | "partial" | "non_compliant" | "unknown" (use "unknown" unless an',
+    "         excerpt documents a specific violation by this named operator).",
+    "  quote: a VERBATIM substring copied from one of that dimension's excerpts that states the",
+    "         requirement. ALWAYS include it when an excerpt is present — it documents the law,",
+    "         not the operator. null ONLY if no excerpt was provided for this dimension.",
     '  documentRef: the "(...)" reference label of the excerpt the quote came from, or null.',
     '  severity: "high" | "medium" | "low" (only meaningful for partial/non_compliant).',
-    "  description: one factual sentence describing the gap (empty string if compliant).",
+    "  description: one factual sentence stating what the regulator requires for this dimension.",
     "",
     "Return STRICT JSON: an array of 6 objects, each",
     '{ "dimension": "<key>", "status": "...", "quote": "...|null", "documentRef": "...|null", "severity": "...", "description": "..." }.',
