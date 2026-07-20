@@ -35,6 +35,7 @@ export type Violation = {
   severity: "high" | "medium" | "low";
   description: string;
   sourceUrl: string | null;
+  documentRef: string | null; // cite by document · section · page when there is no URL
   quote: string | null;
 };
 

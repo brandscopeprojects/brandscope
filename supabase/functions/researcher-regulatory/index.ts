@@ -24,7 +24,7 @@ import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { type ScanModuleMessage } from "../_shared/contracts.ts";
 import { activeDocumentsForMarket } from "./rag.ts";
 import { fetchRegulatoryNews, type NewsItem } from "./change-detection.ts";
-import { assessCompetitor, computeScore, buildViolations, statusColumns } from "./scoring.ts";
+import { assessCompetitor, computeScore, buildViolations, buildRequirements, statusColumns } from "./scoring.ts";
 import { maybeIngestDocument } from "./ingestion.ts";
 
 const TIME_BUDGET_MS = 80_000; // leave headroom under the 90s ceiling for finalisation
@@ -127,6 +127,11 @@ Deno.serve(withMeter(async (req) => {
             raw_data: {
               assessed_with_corpus: usedCorpus,
               document_count: docs.size,
+              // Honest signal today: the market's requirements per dimension,
+              // verbatim + cited. Operator compliance stays 'unknown' until the
+              // competitor-evidence build (Issue B).
+              requirements: buildRequirements(assessments),
+              operator_evidence: false,
               news_headlines: news.slice(0, 10).map((n: NewsItem) => ({
                 title: n.title,
                 url: n.url,

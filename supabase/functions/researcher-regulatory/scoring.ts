@@ -19,7 +19,12 @@ import type { SupabaseClient } from "../_shared/supabase.ts";
 import { DIMENSIONS, type DimensionKey, type DimensionAssessment, type Violation } from "./types.ts";
 import { retrieveChunks } from "./rag.ts";
 
-const PROMPT_VERSION = "regulatory-v1";
+const PROMPT_VERSION = "regulatory-v2";
+
+// Whether this run has OBSERVED the operator's own site/practices. Until the
+// competitor-evidence build lands (Issue B), the module only has the law, so it
+// reports requirements as 'unknown' rather than asserting compliance verdicts.
+const HAS_OPERATOR_EVIDENCE = false;
 
 // Per-dimension retrieval query — anchors the RAG search at the right section.
 const DIMENSION_QUERY: Record<DimensionKey, string> = {
@@ -48,7 +53,7 @@ const DEGRADED_ASSESSMENTS: DimensionAssessment[] = DIMENSIONS.map((d) => ({
 }));
 
 // Slot researcher:regulatory — DB-active prompt_versions row overrides this code default.
-export const REGULATORY_SYSTEM = `You are Brandscope's Regulatory Compliance Researcher for iGaming brands. You assess a competitor's compliance against the regulator requirements for the stated market, using ONLY the provided regulator-document excerpts for that market. You MUST cite a VERBATIM quote (copied exactly from an excerpt, no paraphrase) and the document/section for any 'non_compliant' or 'partial' finding. If the excerpts do not contain enough evidence to judge a dimension, return status 'unknown' with quote null — NEVER guess, NEVER invent a quote, url, or requirement, NEVER apply another jurisdiction's rules. Output STRICT JSON only.`;
+export const REGULATORY_SYSTEM = `You are Brandscope's Regulatory Compliance Researcher for iGaming brands. You are given a market's REGULATOR REQUIREMENTS (law/guideline excerpts) — you are NOT given the operator's actual website or practices. For each dimension: identify the requirement and cite a VERBATIM quote (copied exactly from an excerpt, no paraphrase) plus the document/section. Because you cannot observe whether the operator actually complies, you MUST return status 'unknown' UNLESS an excerpt itself explicitly documents a specific violation by THIS named operator. NEVER infer 'non_compliant' or 'partial' from the existence of a rule, from missing information, or from the operator not being mentioned. Put the requirement in one factual sentence in 'description'. NEVER invent a quote, url, or requirement; NEVER apply another jurisdiction's rules. Output STRICT JSON only.`;
 
 /**
  * Assess all 6 dimensions for one competitor in one market. Retrieves chunks per
@@ -200,11 +205,17 @@ function normaliseAssessments(
     const severity = coerceSeverity(r.severity);
     const description = typeof r.description === "string" ? r.description : "";
 
-    // A 'non_compliant'/'partial' finding with no verifiable quote is downgraded
-    // to 'unknown' — we will not assert a violation we can't cite.
+    // We NEVER assert a violation without (a) a verifiable quote AND (b) observed
+    // operator evidence. A grounded quote proves the REQUIREMENT exists, not that
+    // this operator breaches it — so with no operator-site evidence yet
+    // (HAS_OPERATOR_EVIDENCE=false) every non_compliant/partial is downgraded to
+    // 'unknown' ("requirement identified, compliance unverified"). Issue B will
+    // pass real per-operator evidence and flip the flag.
     const grounded = quote !== null;
     const finalStatus =
-      (status === "non_compliant" || status === "partial") && !grounded ? "unknown" : status;
+      (status === "non_compliant" || status === "partial") && (!grounded || !HAS_OPERATOR_EVIDENCE)
+        ? "unknown"
+        : status;
 
     return {
       dimension: d.key,
@@ -270,21 +281,42 @@ export function computeScore(assessments: DimensionAssessment[]): number | null 
   return n === 0 ? null : Math.round(sum / n);
 }
 
-/** Build the violations jsonb array — only partial/non_compliant with a real quote+url. */
+/** Build the violations jsonb array — only partial/non_compliant with a real quote
+ *  AND a citation (source URL or document·section·page). */
 export function buildViolations(assessments: DimensionAssessment[]): Violation[] {
   const violations: Violation[] = [];
   for (const a of assessments) {
     if (a.status !== "non_compliant" && a.status !== "partial") continue;
-    if (!a.quote || !a.sourceUrl) continue; // never emit an uncited violation
+    if (!a.quote || (!a.sourceUrl && !a.documentRef)) continue; // never emit an uncited violation
     violations.push({
       dimension: a.dimension,
       severity: a.status === "non_compliant" ? a.severity : "low",
       description: a.description || `${a.dimension} ${a.status}`,
       sourceUrl: a.sourceUrl,
+      documentRef: a.documentRef,
       quote: a.quote,
     });
   }
   return violations;
+}
+
+/**
+ * Grounded per-dimension REQUIREMENTS (honest "requirement identified" output
+ * while operator compliance is unverified). One entry per dimension that has a
+ * cited law quote — this is the useful, honest signal today: what each market's
+ * regulator requires, verbatim, per dimension.
+ */
+export function buildRequirements(
+  assessments: DimensionAssessment[],
+): Array<{ dimension: string; requirement: string; quote: string; citation: string | null }> {
+  return assessments
+    .filter((a) => a.quote)
+    .map((a) => ({
+      dimension: a.dimension,
+      requirement: a.description || `${a.dimension} requirement`,
+      quote: a.quote as string,
+      citation: a.sourceUrl ?? a.documentRef,
+    }));
 }
 
 /** Map assessments → the regulatory_cache *_status columns (DB-valid vocab; unknown→null). */
