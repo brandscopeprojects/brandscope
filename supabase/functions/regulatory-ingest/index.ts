@@ -1,10 +1,11 @@
-// regulatory-ingest — admin/ops document ingestion for the regulatory RAG corpus.
+// regulatory-ingest — admin document ingestion for the regulatory RAG corpus.
 //
-// Two input modes (both converge once we have the PDF bytes + metadata):
-//   • multipart/form-data with `file` (+ fields)  ← admin upload
-//   • JSON { source_url, ... }                     ← fetch-by-URL (testing / news)
-// Fields: country, regulatory_body, document_name, document_type?, version?,
-//         effective_date?, source_url?, supersedes? (a regulatory_documents.id).
+// UPLOAD-ONLY (owner decision 2026-07-20): the service never fetches documents
+// from external sites — an internal admin supplies the file. Input is
+// multipart/form-data with a `file` (PDF) + metadata fields: country,
+// regulatory_body, document_name, document_type?, version?, effective_date?,
+// source_url? (provenance link only — NOT fetched), supersedes? (a
+// regulatory_documents.id to deactivate as an older version).
 //
 // Flow: store PDF to R2 → insert regulatory_documents(embedding_status='processing')
 // → return {document_id} immediately → in the background (EdgeRuntime.waitUntil):
@@ -12,7 +13,7 @@
 // (text-embedding-3-small, 1536) → insert document_chunks → mark 'complete'.
 // Every step writes ingestion_logs. Nothing is ever fabricated.
 //
-// Auth: CRON_SECRET (ops/tests) OR a privileged Supabase key (admin server action).
+// Auth: CRON_SECRET (ops) OR a privileged Supabase key (admin server action).
 // verify_jwt=false (custom auth here).
 
 import { extractText } from "https://esm.sh/unpdf@0.12.1";
@@ -197,40 +198,34 @@ Deno.serve(async (req) => {
 
   const sb = serviceClient();
 
-  // 1. Gather bytes + metadata from multipart OR JSON(+fetch).
-  let bytes: Uint8Array | null = null;
-  let meta: Meta;
+  // 1. Gather bytes + metadata from the multipart upload (upload-only — the
+  //    service never fetches documents from external URLs).
   const contentType = req.headers.get("content-type") ?? "";
+  if (!contentType.includes("multipart/form-data")) {
+    return json({ error: "expected multipart/form-data with a PDF 'file'" }, 400);
+  }
+  let bytes: Uint8Array;
+  let meta: Meta;
   try {
-    if (contentType.includes("multipart/form-data")) {
-      const form = await req.formData();
-      const file = form.get("file");
-      if (!(file instanceof File)) return json({ error: "multipart: 'file' is required" }, 400);
-      bytes = new Uint8Array(await file.arrayBuffer());
-      meta = {
-        country: String(form.get("country") ?? ""),
-        regulatory_body: String(form.get("regulatory_body") ?? ""),
-        document_name: String(form.get("document_name") ?? file.name ?? "document.pdf"),
-        document_type: form.get("document_type") ? String(form.get("document_type")) : undefined,
-        version: form.get("version") ? String(form.get("version")) : undefined,
-        effective_date: form.get("effective_date") ? String(form.get("effective_date")) : undefined,
-        source_url: form.get("source_url") ? String(form.get("source_url")) : undefined,
-        supersedes: form.get("supersedes") ? String(form.get("supersedes")) : undefined,
-      };
-    } else {
-      const body = (await req.json()) as Meta;
-      meta = body;
-      if (body.source_url) {
-        const res = await fetch(body.source_url, { signal: AbortSignal.timeout(20_000) });
-        if (!res.ok) return json({ error: `fetch source_url ${res.status}` }, 400);
-        bytes = new Uint8Array(await res.arrayBuffer());
-      }
-    }
+    const form = await req.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) return json({ error: "multipart: 'file' is required" }, 400);
+    bytes = new Uint8Array(await file.arrayBuffer());
+    meta = {
+      country: String(form.get("country") ?? ""),
+      regulatory_body: String(form.get("regulatory_body") ?? ""),
+      document_name: String(form.get("document_name") ?? file.name ?? "document.pdf"),
+      document_type: form.get("document_type") ? String(form.get("document_type")) : undefined,
+      version: form.get("version") ? String(form.get("version")) : undefined,
+      effective_date: form.get("effective_date") ? String(form.get("effective_date")) : undefined,
+      source_url: form.get("source_url") ? String(form.get("source_url")) : undefined,
+      supersedes: form.get("supersedes") ? String(form.get("supersedes")) : undefined,
+    };
   } catch (e) {
     return json({ error: `bad request: ${e instanceof Error ? e.message : String(e)}` }, 400);
   }
 
-  if (!bytes || bytes.byteLength === 0) return json({ error: "no file bytes (provide multipart 'file' or JSON source_url)" }, 400);
+  if (bytes.byteLength === 0) return json({ error: "empty file" }, 400);
   if (!meta.country || !meta.regulatory_body) return json({ error: "country and regulatory_body are required" }, 400);
 
   // 2. Store to R2.
