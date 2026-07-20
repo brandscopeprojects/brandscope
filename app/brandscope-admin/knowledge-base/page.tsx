@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/intelligence/EmptyState";
 import { KnowledgeStats } from "@/components/admin/KnowledgeStats";
 import { KnowledgeDocumentTable } from "@/components/admin/KnowledgeDocumentTable";
 import { KnowledgeIngestionPipeline } from "@/components/admin/KnowledgeIngestionPipeline";
+import { RegulatoryUploadForm } from "@/components/admin/RegulatoryUploadForm";
 import { getKnowledgeBaseData } from "@/lib/data/internal-knowledge";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +29,13 @@ export default async function KnowledgeBasePage() {
         subtitle="Regulatory documents, their embeddings and the ingestion pipeline."
       />
 
+      <RegulatoryUploadForm />
+
       {documents.length === 0 ? (
         <EmptyState
           intent="scanning"
           title="No documents ingested yet"
-          message="Regulatory filings appear here once the ingestion pipeline runs."
+          message="Upload a country's regulator filing above to seed the compliance corpus."
         />
       ) : (
         <>

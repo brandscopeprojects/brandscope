@@ -27,7 +27,11 @@ const MARKET_COUNTRY_ALIASES: Record<string, string[]> = {
 };
 
 function countryAliases(market: string): string[] {
-  return MARKET_COUNTRY_ALIASES[market.toLowerCase()] ?? [market.toLowerCase()];
+  const m = market.toLowerCase().trim();
+  // Explicit aliases for the launch markets; otherwise derive from the slug so
+  // any uploaded market matches — both the slug and its spaced form (so market
+  // "south_sudan" matches a document stored with country "South Sudan").
+  return MARKET_COUNTRY_ALIASES[m] ?? [m, m.replace(/_/g, " ")];
 }
 
 /** Active regulator documents for a market (id → name/url), shared master data. */
