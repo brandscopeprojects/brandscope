@@ -22,6 +22,11 @@ import {
   Wrench,
   PieChart,
   SlidersHorizontal,
+  Mic,
+  Square,
+  Volume2,
+  VolumeX,
+  Loader2,
 } from "lucide-react";
 
 type Msg = {
@@ -115,9 +120,105 @@ export function HqChat() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
+  // ── Voice (OpenAI Whisper in, OpenAI TTS out) ──────────────────────────────
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [speakOn, setSpeakOn] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   const endRef = useRef<HTMLDivElement>(null);
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: "end" }));
+  }, []);
+
+  // Remember the speaker preference across sessions.
+  useEffect(() => {
+    if (typeof window !== "undefined") setSpeakOn(window.localStorage.getItem("hq-speak") === "1");
+  }, []);
+  const toggleSpeak = useCallback(() => {
+    setSpeakOn((on) => {
+      const next = !on;
+      if (typeof window !== "undefined") window.localStorage.setItem("hq-speak", next ? "1" : "0");
+      if (!next && audioRef.current) audioRef.current.pause(); // silence any in-flight playback
+      return next;
+    });
+  }, []);
+
+  // Speak a finished reply via OpenAI TTS (best-effort; voice is additive).
+  const speak = useCallback(async (text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    try {
+      const res = await fetch("/api/hq-chat/voice/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean }),
+      });
+      if (!res.ok) return;
+      const url = URL.createObjectURL(await res.blob());
+      audioRef.current?.pause();
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play().catch(() => URL.revokeObjectURL(url));
+    } catch {
+      /* playback is non-critical — swallow */
+    }
+  }, []);
+
+  // Send a recorded clip to Whisper; drop the transcript into the composer to review.
+  const transcribe = useCallback(async (blob: Blob) => {
+    setTranscribing(true);
+    try {
+      const ext = blob.type.includes("mp4") ? "mp4" : blob.type.includes("ogg") ? "ogg" : "webm";
+      const fd = new FormData();
+      fd.append("audio", blob, `recording.${ext}`);
+      const res = await fetch("/api/hq-chat/voice/transcribe", { method: "POST", body: fd });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; text?: string; error?: string };
+      if (data.ok && data.text) {
+        setInput((prev) => (prev ? `${prev} ${data.text}` : data.text!));
+      } else {
+        setError(data.error ?? "Could not transcribe the recording.");
+      }
+    } catch {
+      setError("Could not transcribe the recording.");
+    } finally {
+      setTranscribing(false);
+    }
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    setError(null);
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setError("Microphone is not available in this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+        if (blob.size > 0) void transcribe(blob);
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setRecording(true);
+    } catch {
+      setError("Microphone access was blocked.");
+    }
+  }, [transcribe]);
+
+  const stopRecording = useCallback(() => {
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
+    setRecording(false);
   }, []);
 
   // ── data loads ──────────────────────────────────────────────────────────────
@@ -232,7 +333,7 @@ export function HqChat() {
           buf = buf.slice(nl + 2);
           const line = chunk.split("\n").find((l) => l.startsWith("data:"));
           if (!line) continue;
-          let evt: { type: string; text?: string; name?: string; conversationId?: string; error?: string; userMessage?: { id: string; created_at: string }; assistantMessage?: { id: string; created_at: string } };
+          let evt: { type: string; text?: string; name?: string; conversationId?: string; error?: string; reply?: string; userMessage?: { id: string; created_at: string }; assistantMessage?: { id: string; created_at: string } };
           try {
             evt = JSON.parse(line.slice(5).trim());
           } catch {
@@ -253,6 +354,7 @@ export function HqChat() {
               created_at: evt.assistantMessage?.created_at ?? a.created_at,
               streaming: false,
             }));
+            if (speakOn && evt.reply) void speak(evt.reply);
             if (evt.userMessage) {
               setMessages((m) => {
                 const c = [...m];
@@ -360,6 +462,19 @@ export function HqChat() {
           className="rounded-chip p-2 text-ink-secondary hover:bg-base-secondary hover:text-ink"
         >
           <BrainCircuit className="h-[18px] w-[18px]" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={toggleSpeak}
+          title={speakOn ? "Voice replies on" : "Voice replies off"}
+          aria-label={speakOn ? "Turn voice replies off" : "Turn voice replies on"}
+          aria-pressed={speakOn}
+          className={[
+            "rounded-chip p-2 hover:bg-base-secondary",
+            speakOn ? "text-cobalt" : "text-ink-secondary hover:text-ink",
+          ].join(" ")}
+        >
+          {speakOn ? <Volume2 className="h-[18px] w-[18px]" aria-hidden /> : <VolumeX className="h-[18px] w-[18px]" aria-hidden />}
         </button>
         <button
           type="button"
@@ -550,10 +665,32 @@ export function HqChat() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask the HQ Agent…"
+          placeholder={recording ? "Listening… tap the mic to stop" : transcribing ? "Transcribing…" : "Ask the HQ Agent…"}
           aria-label="Message the HQ Agent"
           className="min-w-0 flex-1 rounded-full border border-divider bg-base-secondary/60 px-4 py-2.5 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-cobalt"
         />
+        <button
+          type="button"
+          onClick={() => (recording ? stopRecording() : void startRecording())}
+          disabled={busy || transcribing}
+          title={recording ? "Stop recording" : "Record a voice message"}
+          aria-label={recording ? "Stop recording" : "Record a voice message"}
+          aria-pressed={recording}
+          className={[
+            "rounded-full p-3 transition-colors disabled:opacity-50",
+            recording
+              ? "animate-pulse bg-urgent text-white"
+              : "bg-base-secondary text-ink-secondary hover:bg-base-secondary/80 hover:text-ink",
+          ].join(" ")}
+        >
+          {transcribing ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          ) : recording ? (
+            <Square className="h-4 w-4" aria-hidden />
+          ) : (
+            <Mic className="h-4 w-4" aria-hidden />
+          )}
+        </button>
         <button
           type="submit"
           disabled={busy || !input.trim()}

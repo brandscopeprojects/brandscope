@@ -16,11 +16,18 @@ import "server-only";
 export const CLAUDE_SONNET_MODEL = "claude-sonnet-4-6";
 export const OPENAI_CHAT_MODEL = "gpt-4.1-mini";
 export const OPENAI_MODERATION_MODEL = "omni-moderation-latest";
+// Voice I/O for the internal HQ Agent (Whisper STT + TTS). Internal-console only,
+// server-side only — the OpenAI key never reaches the client.
+export const OPENAI_TRANSCRIBE_MODEL = "whisper-1";
+export const OPENAI_TTS_MODEL = "tts-1";
+export const OPENAI_TTS_VOICE = "alloy";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_MODERATION_URL = "https://api.openai.com/v1/moderations";
+const OPENAI_TRANSCRIBE_URL = "https://api.openai.com/v1/audio/transcriptions";
+const OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
 
 export type LlmFailure =
   | { ok: false; reason: "not_configured"; message: string }
@@ -191,6 +198,82 @@ export async function moderateText(text: string): Promise<ModerationResult> {
   const results = (body as { results?: Array<{ flagged?: boolean }> }).results;
   const flagged = Array.isArray(results) && results.some((r) => r.flagged === true);
   return { ok: true, flagged, raw: body };
+}
+
+export type TranscribeResult = { ok: true; text: string } | LlmFailure;
+
+/** Transcribe recorded audio via OpenAI Whisper (server-side only). */
+export async function transcribeAudio(file: Blob, filename: string): Promise<TranscribeResult> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return { ok: false, reason: "not_configured", message: "OpenAI API key is not configured." };
+  }
+
+  const form = new FormData();
+  form.append("file", file, filename);
+  form.append("model", OPENAI_TRANSCRIBE_MODEL);
+  form.append("response_format", "json");
+
+  let res: Response;
+  try {
+    res = await fetch(OPENAI_TRANSCRIBE_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+  } catch (err) {
+    return { ok: false, reason: "upstream_error", message: errorText(err) };
+  }
+
+  if (!res.ok) {
+    return { ok: false, reason: "upstream_error", message: `OpenAI transcription returned ${res.status}.` };
+  }
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (err) {
+    return { ok: false, reason: "upstream_error", message: errorText(err) };
+  }
+
+  const text = typeof (body as { text?: string }).text === "string" ? (body as { text: string }).text.trim() : "";
+  return { ok: true, text };
+}
+
+export type SpeechResult = { ok: true; audio: ArrayBuffer; contentType: string } | LlmFailure;
+
+/** Synthesise speech from text via OpenAI TTS (server-side only). Returns MP3 bytes. */
+export async function synthesizeSpeech(text: string, voice: string = OPENAI_TTS_VOICE): Promise<SpeechResult> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return { ok: false, reason: "not_configured", message: "OpenAI API key is not configured." };
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(OPENAI_SPEECH_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model: OPENAI_TTS_MODEL, voice, input: text, response_format: "mp3" }),
+    });
+  } catch (err) {
+    return { ok: false, reason: "upstream_error", message: errorText(err) };
+  }
+
+  if (!res.ok) {
+    return { ok: false, reason: "upstream_error", message: `OpenAI speech returned ${res.status}.` };
+  }
+
+  let audio: ArrayBuffer;
+  try {
+    audio = await res.arrayBuffer();
+  } catch (err) {
+    return { ok: false, reason: "upstream_error", message: errorText(err) };
+  }
+  return { ok: true, audio, contentType: "audio/mpeg" };
 }
 
 function extractAnthropicText(body: unknown): string {
