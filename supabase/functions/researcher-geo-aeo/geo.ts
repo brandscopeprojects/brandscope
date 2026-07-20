@@ -15,7 +15,7 @@
 // All AI engine responses are UNTRUSTED text — wrap via asUntrustedData before
 // any LLM call (guard.ts / data-flow-rules.md prompt-injection rule).
 
-import { dfsPost, dfsTaskPostAndPoll, firstResult } from "../_shared/dataforseo.ts";
+import { dfsPost, firstResult } from "../_shared/dataforseo.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import { callClaude, loggedLlm, parseJsonFromModel, type LlmResult } from "../_shared/llm.ts";
 import { MODELS } from "../_shared/contracts.ts";
@@ -33,16 +33,26 @@ export type PlatformKey = "chatgpt" | "claude" | "gemini" | "perplexity";
 export type PlatformDef = {
   key: PlatformKey;
   label: string;
-  mode: "task_post" | "live";
   /** DataForSEO ai_optimization path segment for this engine. */
   segment: string;
+  /** DataForSEO model_name for llm_responses/live. REQUIRED by chat_gpt/claude/
+   *  gemini (omitting it → 40501 Invalid Field 'model_name'); Perplexity searches
+   *  natively and needs none. Update these as DataForSEO's /models list evolves. */
+  model?: string;
+  /** Send `web_search: true` so answers mirror what a real user sees (grounded).
+   *  Perplexity already searches natively, so we don't pass the flag there. */
+  webSearch?: boolean;
 };
 
+// ALL FOUR engines now use the SYNCHRONOUS /live endpoint (DataForSEO support,
+// 2026-07-20: /live is available for every engine, ≤120s turnaround — the async
+// task_post flow never fit our serverless budget). chat_gpt/claude/gemini REQUIRE
+// a web-search-capable model_name; Perplexity is left as-is (it already worked).
 export const PLATFORMS: PlatformDef[] = [
-  { key: "chatgpt", label: "ChatGPT", mode: "task_post", segment: "chat_gpt" },
-  { key: "claude", label: "Claude", mode: "task_post", segment: "claude" },
-  { key: "gemini", label: "Gemini", mode: "task_post", segment: "gemini" },
-  { key: "perplexity", label: "Perplexity", mode: "live", segment: "perplexity" },
+  { key: "chatgpt", label: "ChatGPT", segment: "chat_gpt", model: "o4-mini", webSearch: true },
+  { key: "claude", label: "Claude", segment: "claude", model: "claude-sonnet-4-6", webSearch: true },
+  { key: "gemini", label: "Gemini", segment: "gemini", model: "gemini-3.5-flash", webSearch: true },
+  { key: "perplexity", label: "Perplexity", segment: "perplexity" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -118,14 +128,18 @@ export type EngineResponse = {
   text: string; // the engine's raw answer text (UNTRUSTED)
 };
 
-/** Extract the assistant answer text from a DataForSEO llm_responses result item. */
+/** Extract the assistant answer text from a DataForSEO llm_responses result item.
+ *  Confirmed live shape (2026-07-20): result.items[] each { type:'message',
+ *  sections:[{ type:'text', text }] }. Legacy/simple shapes kept as fallbacks. */
 function extractAnswerText(item: unknown): string {
   const r = item as Record<string, unknown>;
-  // DataForSEO returns items[] each with a message/content; shapes vary slightly
-  // across engines, so probe the documented fields defensively.
   const items = (r?.items as Array<Record<string, unknown>>) ?? [];
   const parts: string[] = [];
   for (const it of items) {
+    const sections = (it?.sections as Array<Record<string, unknown>>) ?? [];
+    for (const s of sections) {
+      if (typeof s?.text === "string") parts.push(s.text as string);
+    }
     if (typeof it?.text === "string") parts.push(it.text as string);
     else if (typeof it?.message === "string") parts.push(it.message as string);
     else if (typeof it?.content === "string") parts.push(it.content as string);
@@ -134,51 +148,52 @@ function extractAnswerText(item: unknown): string {
   return parts.join("\n").trim();
 }
 
+const ENGINE_CONCURRENCY = 3; // parallel live calls per engine (bounded)
+const PER_CALL_MS = 45_000; // abandon a single live call after 45s (rare; bounds isolate time)
+
 /**
- * Dispatch one engine over the full query set.
- * task_post engines: post all queries, poll once (bounded). live engines: per-query.
- * Failures are swallowed to a partial result — never throw out of a single engine.
+ * Dispatch one engine over the query set via the SYNCHRONOUS /live endpoint.
+ * Queries run with bounded concurrency; each call carries model_name + web_search
+ * where the engine requires them. Any per-query failure is swallowed to a partial
+ * result — a single query/engine never throws out of the module. Context (if any)
+ * is folded into the prompt (llm_responses/live accepts user_prompt, not a system
+ * field), so we never risk a 40501 on an unsupported parameter.
  */
 export async function runEngine(
   platform: PlatformDef,
   queries: GeoQuery[],
-  opts: { maxWaitMs: number },
+  _opts: { maxWaitMs: number },
 ): Promise<EngineResponse[]> {
-  const base = `ai_optimization/${platform.segment}/llm_responses`;
-  const tasks = queries.map((q) => ({
-    user_prompt: q.text,
-    ...(q.contextInjection ? { system_message: q.contextInjection } : {}),
-  }));
-
-  if (platform.mode === "task_post") {
-    const results = await dfsTaskPostAndPoll<Record<string, unknown>>(
-      `${base}/task_post`,
-      `${base}/task_get`,
-      tasks,
-      { maxWaitMs: opts.maxWaitMs, intervalMs: 4_000 },
-    );
-    // Map results back to queries positionally where DataForSEO echoes the prompt.
-    return results.map((res, i) => {
-      const prompt = (res?.user_prompt as string) ?? queries[i]?.text ?? "";
-      const q = queries.find((x) => x.text === prompt) ?? queries[i];
-      return { query: q?.text ?? prompt, category: q?.category ?? "unknown", text: extractAnswerText(res) };
-    });
-  }
-
-  // Live engine (Perplexity): one live call per query.
+  const url = `ai_optimization/${platform.segment}/llm_responses/live`;
   const out: EngineResponse[] = [];
-  for (const q of queries) {
+  let idx = 0;
+
+  async function callOne(q: GeoQuery): Promise<void> {
+    const prompt = q.contextInjection ? `${q.contextInjection}\n\n${q.text}` : q.text;
+    const task: Record<string, unknown> = { user_prompt: prompt };
+    if (platform.model) task.model_name = platform.model;
+    if (platform.webSearch) task.web_search = true;
     try {
-      const body = await dfsPost<{ tasks?: Array<{ result?: Record<string, unknown>[] }> }>(
-        `${base}/live`,
-        [{ user_prompt: q.text, ...(q.contextInjection ? { system_message: q.contextInjection } : {}) }],
-      );
+      const body = await Promise.race([
+        dfsPost<{ tasks?: Array<{ result?: Record<string, unknown>[] }> }>(url, [task]),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("live call timeout")), PER_CALL_MS)),
+      ]);
       const res = firstResult<Record<string, unknown>>(body)[0] ?? {};
       out.push({ query: q.text, category: q.category, text: extractAnswerText(res) });
     } catch (_e) {
       // skip this query for this engine; partial coverage is acceptable
     }
   }
+
+  async function worker(): Promise<void> {
+    while (idx < queries.length) {
+      const q = queries[idx++];
+      await callOne(q);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(ENGINE_CONCURRENCY, queries.length) }, () => worker());
+  await Promise.all(workers);
   return out;
 }
 

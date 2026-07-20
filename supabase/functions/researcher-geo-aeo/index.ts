@@ -36,8 +36,14 @@ import {
   type PlatformAnalysis,
 } from "./geo.ts";
 
-// Bounded poll window for the three task_post engines, well under the 90s budget.
+// Bounded per-call window (kept for signature compatibility with runEngine).
 const ENGINE_MAX_WAIT_MS = 60_000;
+
+// COST CONTROL: each GEO query costs ~$0.03–0.09 PER ENGINE (web-search-grounded
+// /live), so ~$0.20/query across the 4 engines. We therefore sample the top N
+// queries of the active set rather than firing all ~15 — N is the main GEO cost
+// dial. 5 queries ≈ ~$1/scan of GEO; lower it to cut cost, raise for coverage.
+const GEO_QUERY_LIMIT = 5;
 
 Deno.serve(withMeter(async (req) => {
   const pf = preflight(req);
@@ -63,8 +69,9 @@ Deno.serve(withMeter(async (req) => {
   const market = msg.markets?.[0] ?? "nigeria";
 
   try {
-    // 1. Load the 15-query GEO set (brand name + market injected).
-    const queries = await loadQueries(sb, msg.brand_name, market);
+    // 1. Load the active GEO query set (brand name + market injected), then cap to
+    //    GEO_QUERY_LIMIT to bound per-scan cost (web-search /live is ~$0.20/query).
+    const queries = (await loadQueries(sb, msg.brand_name, market)).slice(0, GEO_QUERY_LIMIT);
     if (queries.length === 0) {
       // No templates seeded → we cannot run the module meaningfully. Treat as
       // partial: record health, do not write a fabricated row.
