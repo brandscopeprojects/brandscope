@@ -1,6 +1,6 @@
-// ops-geo-probe — TEMP diagnostic. v4: dump the RAW /live result shape for one
-// engine so we can map the answer-text field correctly, and compare cost with vs
-// without web_search. Self-contained; CRON_SECRET-gated.
+// ops-geo-probe — TEMP diagnostic. v5: dump the RAW perplexity /live result shape
+// (its extracted text came back empty while chat_gpt/claude/gemini worked, so its
+// result structure must differ). Self-contained; CRON_SECRET-gated.
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -35,20 +35,30 @@ Deno.serve(async (req) => {
   const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!bearer || bearer !== Deno.env.get("CRON_SECRET")) return json({ error: "unauthorized" }, 401);
 
-  // Gemini (cheapest/fastest) with web_search on — dump the raw result verbatim.
-  const withWs = await dfs("ai_optimization/gemini/llm_responses/live", [
-    { user_prompt: PROMPT, model_name: "gemini-3.5-flash", web_search: true },
+  // (a) as current code does: user_prompt only.
+  const bare = await dfs("ai_optimization/perplexity/llm_responses/live", [{ user_prompt: PROMPT }]);
+  // (b) with a model_name + web_search, in case perplexity now needs them.
+  const withModel = await dfs("ai_optimization/perplexity/llm_responses/live", [
+    { user_prompt: PROMPT, model_name: "sonar", web_search: true },
   ]);
-  const result = withWs.data?.tasks?.[0]?.result?.[0] ?? null;
+
+  const r1 = bare.data?.tasks?.[0]?.result?.[0] ?? null;
+  const r2 = withModel.data?.tasks?.[0]?.result?.[0] ?? null;
 
   return json({
-    note: "GEO probe v4 — raw /live result shape (gemini)",
-    http: withWs.http,
-    cost: withWs.data?.cost,
-    task_status: withWs.data?.tasks?.[0]?.status_message,
-    result_top_keys: result ? Object.keys(result) : null,
-    items_len: Array.isArray(result?.items) ? result.items.length : null,
-    item0_keys: Array.isArray(result?.items) && result.items[0] ? Object.keys(result.items[0]) : null,
-    raw_result: JSON.stringify(result ?? withWs.data).slice(0, 3500),
+    note: "GEO probe v5 — perplexity /live raw shape",
+    bare: {
+      task_status: bare.data?.tasks?.[0]?.status_message,
+      cost: bare.data?.cost,
+      result_keys: r1 ? Object.keys(r1) : null,
+      item0_keys: Array.isArray(r1?.items) && r1.items[0] ? Object.keys(r1.items[0]) : null,
+      raw: JSON.stringify(r1 ?? bare.data).slice(0, 2500),
+    },
+    with_model: {
+      task_status: withModel.data?.tasks?.[0]?.status_message,
+      cost: withModel.data?.cost,
+      result_keys: r2 ? Object.keys(r2) : null,
+      raw: JSON.stringify(r2 ?? withModel.data).slice(0, 1500),
+    },
   });
 });

@@ -44,15 +44,17 @@ export type PlatformDef = {
   webSearch?: boolean;
 };
 
-// ALL FOUR engines now use the SYNCHRONOUS /live endpoint (DataForSEO support,
+// ALL FOUR engines use the SYNCHRONOUS /live endpoint (DataForSEO support,
 // 2026-07-20: /live is available for every engine, ≤120s turnaround — the async
-// task_post flow never fit our serverless budget). chat_gpt/claude/gemini REQUIRE
-// a web-search-capable model_name; Perplexity is left as-is (it already worked).
+// task_post flow never fit our serverless budget). EVERY engine — Perplexity
+// included — REQUIRES a model_name (omitting it → 40501, null result: this is why
+// GEO was really 0/4, not 1/4). Models are web-search-capable so answers mirror
+// what a real user sees; update them as DataForSEO's /models list evolves.
 export const PLATFORMS: PlatformDef[] = [
   { key: "chatgpt", label: "ChatGPT", segment: "chat_gpt", model: "o4-mini", webSearch: true },
   { key: "claude", label: "Claude", segment: "claude", model: "claude-sonnet-4-6", webSearch: true },
   { key: "gemini", label: "Gemini", segment: "gemini", model: "gemini-3.5-flash", webSearch: true },
-  { key: "perplexity", label: "Perplexity", segment: "perplexity" },
+  { key: "perplexity", label: "Perplexity", segment: "perplexity", model: "sonar", webSearch: true },
 ];
 
 // ---------------------------------------------------------------------------
