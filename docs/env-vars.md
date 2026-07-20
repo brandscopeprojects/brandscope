@@ -30,7 +30,9 @@
 | Variable Name | Used In | Model/Service |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Edge Functions + Vercel | Claude Sonnet 4.6, Claude Haiku 4.5 (Vercel: internal HQ Agent chat) |
-| `OPENAI_API_KEY` | Edge Functions + Vercel | GPT-4.1, GPT-4.1 Mini, text-embedding-3-small, Moderation API (Vercel: HQ Agent voice — Whisper STT `whisper-1`, TTS `tts-1`) |
+| `OPENAI_API_KEY` | Edge Functions + Vercel | GPT-4.1, GPT-4.1 Mini, text-embedding-3-small, Moderation API (Vercel: HQ Agent text via Responses API + realtime voice via WebRTC) |
+| `OPENAI_TEXT_MODEL` | Vercel (optional) | HQ Agent text-chat model. Default `gpt-4o-mini`. |
+| `OPENAI_REALTIME_MODEL` | Vercel (optional) | HQ Agent realtime-voice model. Default `gpt-realtime-2.1-mini`. |
 | `DEEPSEEK_API_KEY` | Edge Functions | DeepSeek V3.2 — bulk extraction |
 | `KIMI_API_KEY` | Edge Functions | Moonshot/Kimi — African language tasks |
 | `XAI_API_KEY` | Edge Functions | Grok — GEO monitoring |
