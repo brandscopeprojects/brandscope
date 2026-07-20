@@ -30,9 +30,6 @@ import { maybeIngestDocument } from "./ingestion.ts";
 const TIME_BUDGET_MS = 80_000; // leave headroom under the 90s ceiling for finalisation
 const SYNTHESIS_FN = "synthesis-draft-audit";
 
-// Markets the regulatory corpus covers at MVP (mvp-module-sources.md §7).
-const SUPPORTED_MARKETS = new Set(["nigeria", "kenya", "south_africa"]);
-
 Deno.serve(withMeter(async (req) => {
   const pf = preflight(req);
   if (pf) return pf;
@@ -52,13 +49,13 @@ Deno.serve(withMeter(async (req) => {
   setMeterCtx({ sb, organisation_id: msg.organisation_id ?? null, brand_id: msg.brand_id, scan_job_id: msg.scan_job_id, task_type: msg.task_type });
   const deadline = Date.now() + TIME_BUDGET_MS;
   const requestedMarkets = (msg.markets ?? []).map((m) => m.toLowerCase());
-  // NO Nigeria fallback: scoring a brand from an unsupported market against
-  // Nigerian regulations fabricates a compliance verdict AND mis-tags the row as
-  // 'nigeria' (this is exactly what produced a false "nigeria" reading for a
-  // Uganda brand). We score ONLY markets whose corpus we actually have; if none
-  // are supported we write nothing and report the gap honestly below.
-  const effectiveMarkets = requestedMarkets.filter((m) => SUPPORTED_MARKETS.has(m));
-  const unsupportedMarkets = requestedMarkets.filter((m) => !SUPPORTED_MARKETS.has(m));
+  // CORPUS-DRIVEN support (no hardcoded market allowlist): a market is scorable
+  // iff we have ingested regulator documents for it (regulatory_documents, seeded
+  // via the Knowledge Base upload). We score each market ONLY against its OWN
+  // corpus — never a fallback jurisdiction (scoring a Zambia brand against
+  // Nigerian law would fabricate a verdict). Markets with no corpus are collected
+  // and reported as an actionable gap ("upload the documents"), never scored.
+  const marketsWithoutCorpus: string[] = [];
 
   try {
     let anyCorpus = false;
@@ -66,7 +63,7 @@ Deno.serve(withMeter(async (req) => {
     let rowsWritten = 0;
     let ingestionAttempted = false;
 
-    for (const market of effectiveMarkets) {
+    for (const market of requestedMarkets) {
       if (Date.now() > deadline) break;
 
       // ── Active corpus for this market (shared master data) ──
@@ -86,7 +83,13 @@ Deno.serve(withMeter(async (req) => {
         }
       }
 
-      if (docs.size === 0) anyDegraded = true;
+      // No corpus for this market → record the gap and skip it entirely. We never
+      // score against another jurisdiction; uploading docs in Knowledge Base fixes it.
+      if (docs.size === 0) {
+        marketsWithoutCorpus.push(market);
+        anyDegraded = true;
+        continue;
+      }
 
       // ── 2 + 3. Per-competitor compliance scoring ──
       const targets = msg.competitors ?? [];
@@ -147,14 +150,14 @@ Deno.serve(withMeter(async (req) => {
         feature_category: "regulatory",
         feature_name: "Regulatory Compliance",
         status: "degraded",
-        root_cause: effectiveMarkets.length === 0
-          ? `No regulatory corpus for the brand's market(s): ${unsupportedMarkets.join(", ") || "unknown"}. Supported at MVP: Nigeria, Kenya, South Africa.`
-          : anyCorpus
-          ? "Some competitors/markets scored without sufficient regulator corpus or within time budget"
-          : "regulatory corpus not yet ingested",
-        resolution_suggested: effectiveMarkets.length === 0
-          ? `Ingest the regulator corpus for ${unsupportedMarkets.join(", ") || "the brand market"} to enable compliance scoring; until then regulatory is intentionally blank rather than scored against the wrong jurisdiction.`
-          : "Ingest NBGC/BCLB/WCGRB source documents (Sprint 4, Step 36) so verbatim RAG can score all dimensions.",
+        root_cause: !anyCorpus
+          ? `No regulatory corpus for the brand's market(s): ${marketsWithoutCorpus.join(", ") || "unknown"}. Upload the regulator documents in the internal-admin Knowledge Base to enable compliance scoring.`
+          : marketsWithoutCorpus.length > 0
+          ? `Scored markets with a corpus; still missing a corpus for: ${marketsWithoutCorpus.join(", ")}.`
+          : "Some competitors/markets scored within a reduced time budget",
+        resolution_suggested: marketsWithoutCorpus.length > 0
+          ? `Upload the regulator corpus for ${marketsWithoutCorpus.join(", ")} in the internal-admin Knowledge Base; each market is scored only against its own jurisdiction's documents.`
+          : "Increase the module time budget or reduce competitor count if scoring was truncated.",
       });
     }
 
