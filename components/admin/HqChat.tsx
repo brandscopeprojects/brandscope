@@ -21,6 +21,7 @@ import {
   Sun,
   Wrench,
   PieChart,
+  SlidersHorizontal,
 } from "lucide-react";
 
 type Msg = {
@@ -30,10 +31,21 @@ type Msg = {
   toolsUsed?: string[];
   reaction?: "up" | "down" | null;
   created_at?: string;
+  streaming?: boolean;
 };
 type Conversation = { id: string; title: string; message_count: number; last_message_at: string };
 type MemoryEntry = { id: string; kind: string; content: string; created_at: string };
 type Suggestion = { messageId: string; note: string; answerExcerpt: string; at: string };
+type HqSettings = {
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  requestsPerMin: number;
+  active: boolean;
+  systemPrompt: string;
+  codeDefaultPrompt: string;
+  models: string[];
+};
 
 const TOOL_LABEL: Record<string, string> = {
   brands_overview: "Brands",
@@ -92,13 +104,16 @@ export function HqChat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [panel, setPanel] = useState<"none" | "history" | "memory">("none");
+  const [panel, setPanel] = useState<"none" | "history" | "memory" | "settings">("none");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [memory, setMemory] = useState<MemoryEntry[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [newMemory, setNewMemory] = useState("");
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
+  const [settings, setSettings] = useState<HqSettings | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
 
   const endRef = useRef<HTMLDivElement>(null);
   const scrollToEnd = useCallback(() => {
@@ -134,18 +149,61 @@ export function HqChat() {
       setSuggestions(data.suggestions);
     }
   }
+  async function loadSettings() {
+    const res = await fetch("/api/hq-chat/settings");
+    const data = await res.json();
+    if (data.ok) setSettings(data as HqSettings);
+  }
+  async function saveSettings() {
+    if (!settings) return;
+    setSavingSettings(true);
+    setSettingsSaved(false);
+    try {
+      const res = await fetch("/api/hq-chat/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSettingsSaved(true);
+        setTimeout(() => setSettingsSaved(false), 2500);
+      }
+    } finally {
+      setSavingSettings(false);
+    }
+  }
   useEffect(() => {
     if (panel === "history") void loadConversations();
     if (panel === "memory") void loadMemory();
+    if (panel === "settings") void loadSettings();
   }, [panel]);
 
   // ── actions ─────────────────────────────────────────────────────────────────
+  // Patch the most recent assistant message (the one currently streaming).
+  const patchLastAssistant = useCallback((fn: (a: Msg) => Msg) => {
+    setMessages((m) => {
+      const copy = [...m];
+      for (let i = copy.length - 1; i >= 0; i--) {
+        if (copy[i].role === "assistant") {
+          copy[i] = fn(copy[i]);
+          break;
+        }
+      }
+      return copy;
+    });
+  }, []);
+
   async function send(text: string) {
     const q = text.trim();
     if (!q || busy) return;
     setError(null);
     setInput("");
-    setMessages((m) => [...m, { role: "user", content: q, created_at: new Date().toISOString() }]);
+    setMessages((m) => [
+      ...m,
+      { role: "user", content: q, created_at: new Date().toISOString() },
+      { role: "assistant", content: "", toolsUsed: [], reaction: null, streaming: true, created_at: new Date().toISOString() },
+    ]);
     setBusy(true);
     scrollToEnd();
     try {
@@ -154,33 +212,68 @@ export function HqChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversationId, message: q }),
       });
-      const data = await res.json();
-      if (!data.ok) {
+      if (!res.ok || !res.body) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
         setError(data.error ?? "The agent could not answer. Try again.");
-      } else {
-        setConversationId(data.conversationId);
-        setMessages((m) => {
-          const withIds = [...m];
-          const lastUser = withIds[withIds.length - 1];
-          if (lastUser?.role === "user" && data.userMessage) {
-            lastUser.id = data.userMessage.id;
-            lastUser.created_at = data.userMessage.created_at;
+        // drop the empty streaming placeholder
+        setMessages((m) => (m[m.length - 1]?.role === "assistant" && !m[m.length - 1]?.content ? m.slice(0, -1) : m));
+        return;
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n\n")) !== -1) {
+          const chunk = buf.slice(0, nl);
+          buf = buf.slice(nl + 2);
+          const line = chunk.split("\n").find((l) => l.startsWith("data:"));
+          if (!line) continue;
+          let evt: { type: string; text?: string; name?: string; conversationId?: string; error?: string; userMessage?: { id: string; created_at: string }; assistantMessage?: { id: string; created_at: string } };
+          try {
+            evt = JSON.parse(line.slice(5).trim());
+          } catch {
+            continue;
           }
-          return [
-            ...withIds,
-            {
-              id: data.assistantMessage?.id,
-              role: "assistant",
-              content: data.reply,
-              toolsUsed: data.toolsUsed,
-              reaction: null,
-              created_at: data.assistantMessage?.created_at ?? new Date().toISOString(),
-            },
-          ];
-        });
+          if (evt.type === "delta" && evt.text) {
+            patchLastAssistant((a) => ({ ...a, content: a.content + evt.text }));
+            scrollToEnd();
+          } else if (evt.type === "reset") {
+            patchLastAssistant((a) => ({ ...a, content: "" }));
+          } else if (evt.type === "tool" && evt.name) {
+            patchLastAssistant((a) => ({ ...a, toolsUsed: [...(a.toolsUsed ?? []), evt.name!] }));
+          } else if (evt.type === "done") {
+            if (evt.conversationId) setConversationId(evt.conversationId);
+            patchLastAssistant((a) => ({
+              ...a,
+              id: evt.assistantMessage?.id,
+              created_at: evt.assistantMessage?.created_at ?? a.created_at,
+              streaming: false,
+            }));
+            if (evt.userMessage) {
+              setMessages((m) => {
+                const c = [...m];
+                for (let i = c.length - 1; i >= 0; i--) {
+                  if (c[i].role === "user") {
+                    c[i] = { ...c[i], id: evt.userMessage!.id, created_at: evt.userMessage!.created_at };
+                    break;
+                  }
+                }
+                return c;
+              });
+            }
+          } else if (evt.type === "error") {
+            setError(evt.error ?? "The agent failed. Try again.");
+            patchLastAssistant((a) => ({ ...a, streaming: false }));
+          }
+        }
       }
     } catch {
       setError("Network error — try again.");
+      patchLastAssistant((a) => ({ ...a, streaming: false }));
     } finally {
       setBusy(false);
       scrollToEnd();
@@ -268,6 +361,15 @@ export function HqChat() {
         >
           <BrainCircuit className="h-[18px] w-[18px]" aria-hidden />
         </button>
+        <button
+          type="button"
+          onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
+          title="Chat settings"
+          aria-label="Chat settings"
+          className="rounded-chip p-2 text-ink-secondary hover:bg-base-secondary hover:text-ink"
+        >
+          <SlidersHorizontal className="h-[18px] w-[18px]" aria-hidden />
+        </button>
       </div>
 
       {/* ── Thread ── */}
@@ -332,15 +434,35 @@ export function HqChat() {
                         : "rounded-2xl rounded-bl-md bg-card text-ink",
                     ].join(" ")}
                   >
-                    {m.content}
-                    <span
-                      className={[
-                        "mt-1 flex items-center justify-end gap-1 text-[10px]",
-                        mine ? "text-white/70" : "text-ink-faint",
-                      ].join(" ")}
-                    >
-                      {timeOf(m.created_at)}
-                    </span>
+                    {m.streaming && !m.content ? (
+                      <span className="flex items-center gap-1 py-1">
+                        {[0, 1, 2].map((d) => (
+                          <motion.span
+                            key={d}
+                            className="h-1.5 w-1.5 rounded-full bg-ink-faint"
+                            animate={reduced ? {} : { opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 1.1, repeat: Infinity, delay: d * 0.18 }}
+                          />
+                        ))}
+                      </span>
+                    ) : (
+                      <>
+                        {m.content}
+                        {m.streaming && (
+                          <span className="ml-0.5 inline-block h-3.5 w-[2px] translate-y-[2px] animate-pulse bg-current align-middle" />
+                        )}
+                      </>
+                    )}
+                    {!m.streaming && (
+                      <span
+                        className={[
+                          "mt-1 flex items-center justify-end gap-1 text-[10px]",
+                          mine ? "text-white/70" : "text-ink-faint",
+                        ].join(" ")}
+                      >
+                        {timeOf(m.created_at)}
+                      </span>
+                    )}
                     {!mine && (m.toolsUsed?.length ?? 0) > 0 && (
                       <span className="mt-1.5 flex flex-wrap gap-1 border-t border-divider pt-1.5">
                         {Array.from(new Set(m.toolsUsed)).map((t) => (
@@ -413,20 +535,6 @@ export function HqChat() {
           })}
         </AnimatePresence>
 
-        {busy && (
-          <div className="flex justify-start">
-            <span className="flex items-center gap-1.5 rounded-2xl rounded-bl-md bg-card px-4 py-3 shadow-sh1">
-              {[0, 1, 2].map((d) => (
-                <motion.span
-                  key={d}
-                  className="h-1.5 w-1.5 rounded-full bg-ink-faint"
-                  animate={reduced ? {} : { opacity: [0.3, 1, 0.3] }}
-                  transition={{ duration: 1.1, repeat: Infinity, delay: d * 0.18 }}
-                />
-              ))}
-            </span>
-          </div>
-        )}
         {error && <p className="px-1 text-sm text-urgent">{error}</p>}
         <div ref={endRef} />
       </div>
@@ -468,7 +576,7 @@ export function HqChat() {
           >
             <div className="flex items-center justify-between border-b border-divider px-4 py-3">
               <p className="text-sm font-semibold text-ink">
-                {panel === "history" ? "Chats" : "Agent memory"}
+                {panel === "history" ? "Chats" : panel === "memory" ? "Agent memory" : "Chat settings"}
               </p>
               <button
                 type="button"
@@ -576,6 +684,113 @@ export function HqChat() {
                       </div>
                     ))}
                   </div>
+                </>
+              )}
+
+              {panel === "settings" && (
+                <>
+                  {!settings ? (
+                    <p className="pt-6 text-center text-xs text-ink-faint">Loading settings…</p>
+                  ) : (
+                    <div className="space-y-4">
+                      <label className="block space-y-1">
+                        <span className="text-xs font-medium text-ink">Model</span>
+                        <select
+                          value={settings.model}
+                          onChange={(e) => setSettings({ ...settings, model: e.target.value })}
+                          className="w-full rounded-chip border border-divider bg-card px-2.5 py-2 text-xs text-ink outline-none focus:border-cobalt"
+                        >
+                          {settings.models.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                              {m.includes("haiku") ? " (faster, cheaper)" : m.includes("sonnet") ? " (smart, default)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block space-y-1">
+                        <span className="flex items-center justify-between text-xs font-medium text-ink">
+                          <span>Temperature</span>
+                          <span className="text-ink-faint">{settings.temperature.toFixed(2)}</span>
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={settings.temperature}
+                          onChange={(e) => setSettings({ ...settings, temperature: Number(e.target.value) })}
+                          className="w-full accent-cobalt"
+                        />
+                      </label>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block space-y-1">
+                          <span className="text-xs font-medium text-ink">Max tokens</span>
+                          <input
+                            type="number"
+                            min={256}
+                            max={4096}
+                            value={settings.maxTokens}
+                            onChange={(e) => setSettings({ ...settings, maxTokens: Number(e.target.value) })}
+                            className="w-full rounded-chip border border-divider bg-card px-2.5 py-2 text-xs text-ink outline-none focus:border-cobalt"
+                          />
+                        </label>
+                        <label className="block space-y-1">
+                          <span className="text-xs font-medium text-ink">Rate limit /min</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={600}
+                            value={settings.requestsPerMin}
+                            onChange={(e) => setSettings({ ...settings, requestsPerMin: Number(e.target.value) })}
+                            className="w-full rounded-chip border border-divider bg-card px-2.5 py-2 text-xs text-ink outline-none focus:border-cobalt"
+                          />
+                        </label>
+                      </div>
+
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={settings.active}
+                          onChange={(e) => setSettings({ ...settings, active: e.target.checked })}
+                          className="h-4 w-4 accent-cobalt"
+                        />
+                        <span className="text-xs font-medium text-ink">Agent enabled</span>
+                      </label>
+
+                      <label className="block space-y-1">
+                        <span className="text-xs font-medium text-ink">System prompt</span>
+                        <textarea
+                          rows={8}
+                          value={settings.systemPrompt}
+                          onChange={(e) => setSettings({ ...settings, systemPrompt: e.target.value })}
+                          placeholder="Leave blank to use the built-in default prompt."
+                          className="w-full rounded-card border border-divider bg-card px-2.5 py-2 font-mono text-[11px] leading-4 text-ink outline-none focus:border-cobalt"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSettings({ ...settings, systemPrompt: settings.codeDefaultPrompt })}
+                          className="text-[11px] font-medium text-cobalt"
+                        >
+                          Load default prompt to edit
+                        </button>
+                      </label>
+
+                      <div className="flex items-center gap-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => void saveSettings()}
+                          disabled={savingSettings}
+                          className="rounded-chip bg-cobalt px-3 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                        >
+                          {savingSettings ? "Saving…" : "Save settings"}
+                        </button>
+                        {settingsSaved && <span className="text-xs text-opportunity">Saved — applies to the next message.</span>}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
