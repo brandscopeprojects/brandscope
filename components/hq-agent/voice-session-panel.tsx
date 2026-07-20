@@ -220,6 +220,3 @@ export function VoiceSessionPanel({
     </div>
   );
 }
-
-// Re-export for a tidy import surface where the launcher wraps this in AnimatePresence.
-export { AnimatePresence as VoicePanelPresence };

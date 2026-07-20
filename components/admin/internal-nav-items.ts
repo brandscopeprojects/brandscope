@@ -10,6 +10,7 @@ import {
   BookOpen,
   ShieldCheck,
   LineChart,
+  SlidersHorizontal,
 } from "lucide-react";
 
 export type InternalNavItem = {
@@ -22,6 +23,7 @@ export type InternalNavItem = {
 
 export const INTERNAL_NAV: InternalNavItem[] = [
   { label: "HQ Chat", href: "/brandscope-admin/chat", icon: MessageSquare },
+  { label: "HQ Settings", href: "/brandscope-admin/settings", icon: SlidersHorizontal },
   { label: "System Health", href: "/brandscope-admin/health", icon: Activity },
   { label: "Agent Control", href: "/brandscope-admin/agents", icon: Bot },
   { label: "API Management", href: "/brandscope-admin/api-management", icon: Plug },

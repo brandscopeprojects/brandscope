@@ -77,16 +77,12 @@ export function VoiceWaveform({
       <div className="flex items-end gap-[3px]" style={{ height: barTrack }}>
         {heights.map((h, i) => {
           const target = `${Math.round(h * 100)}%`;
-          const animate =
-            reactive && !reduced
-              ? { height: target }
-              : { height: target };
           return (
             <motion.span
               key={i}
               className="w-[3px] rounded-full bg-white sm:w-[4px]"
               style={{ minHeight: 4 }}
-              animate={animate}
+              animate={{ height: target }}
               transition={
                 reduced
                   ? { duration: 0 }
