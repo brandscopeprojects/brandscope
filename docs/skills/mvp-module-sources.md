@@ -42,7 +42,7 @@
 
 ### 7. Regulatory  ✓ FULL  → writes `regulatory_cache` (+ `regulatory_documents`,`document_chunks`,`ingestion_logs`)
 - **Endpoints:** `serp/google/news/live/advanced` (change detection); ingestion: fetch PDF → R2 → OpenAI `text-embedding-3-small` (1536) → pgvector.
-- **Claude:** Sonnet 4.6 verbatim RAG (≥0.80 similarity gate, cite document/section/page); Haiku for doc classification + chunk-quality scoring + compliance dimension checks.
+- **Claude:** Sonnet 4.6 verbatim RAG (**≥0.30 cosine noise-floor** — amended 2026-07-20: the original 0.80 rejected every chunk since text-embedding-3-small scores relevant text ~0.3–0.5; TOP_K ranking + Sonnet judgement do the precision filtering; cite document/section/page); Haiku for doc classification + chunk-quality scoring + compliance dimension checks.
 
 ### 8. Promotions  ⚠ PARTIAL → "Promotion **Signals**"  → writes `promotions_cache`
 - **NO Firecrawl.** **Endpoints:** `content_analysis/search/live` (bonus mentions across NG betting content), `serp/google/news/live/advanced` (promo announcements), App reviews (promo mentions), `keywords_data/google_ads/search_volume/live` (bonus-keyword movement), OnPage Content Parsing (proxy signals).

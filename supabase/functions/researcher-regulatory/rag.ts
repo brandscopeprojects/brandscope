@@ -15,7 +15,13 @@ import { embed } from "../_shared/llm.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import type { ScoredChunk } from "./types.ts";
 
-const SIMILARITY_GATE = 0.8; // mvp-module-sources.md §7 — verbatim RAG gate
+// Cosine floor for a chunk to be considered relevant. text-embedding-3-small
+// scores topically-relevant regulatory text ~0.3–0.5 (NOT ~0.8), so the original
+// 0.80 gate rejected every chunk even against a full corpus. 0.30 is a noise
+// floor only — TOP_K ranking + the downstream Sonnet assessment do the real
+// precision filtering (a retrieved chunk is still judged "addressed / not" by the
+// model). (Supersedes the ≥0.80 figure in mvp-module-sources.md §7.)
+const SIMILARITY_GATE = 0.3;
 const MAX_CANDIDATE_CHUNKS = 400; // bound the candidate pull (per market)
 const TOP_K = 6; // chunks fed to Sonnet per query
 
