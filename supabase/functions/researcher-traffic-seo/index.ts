@@ -31,7 +31,7 @@ import {
   fetchKeywordIntersection,
   fetchRankedKeywords,
   fetchSearchVolumes,
-  fetchBrandDemand,
+  fetchBrandDemandBatch,
   fetchBrandTrends,
   fetchSiteKeywordCount,
   mergeKeywordGaps,
@@ -89,12 +89,21 @@ Deno.serve(withMeter(async (req) => {
       sb, market0, "brand_demand",
       competitors.map((c) => domainKey(c.domain)),
       async (missing) => {
-        const out: Record<string, number | null> = {};
+        // ONE batched search_volume/live call for every missing competitor
+        // (up to 1000 keywords/call) instead of one call per competitor.
+        const missingSet = new Set(missing);
+        const seen = new Set<string>();
+        const entities: Array<{ key: string; name: string; domain: string }> = [];
         for (const c of competitors) {
           const key = domainKey(c.domain);
-          if (!missing.includes(key) || key in out) continue;
-          out[key] = await fetchBrandDemand(c.name, c.domain, location, language).catch(() => null);
+          if (!missingSet.has(key) || seen.has(key)) continue;
+          seen.add(key);
+          entities.push({ key, name: c.name, domain: c.domain });
         }
+        const demandMap = await fetchBrandDemandBatch(entities, location, language)
+          .catch(() => new Map<string, number | null>());
+        const out: Record<string, number | null> = {};
+        for (const k of missing) out[k] = demandMap.get(k) ?? null;
         return out;
       },
     );

@@ -212,20 +212,46 @@ export async function fetchSearchVolumes(
 // ── 5. Brand demand: navigational search volume for the brand itself ─────────
 // Clickstream-free reach proxy for direct-traffic brands (scoring-formulas §1
 // demand_norm): how many people in this market search the brand BY NAME monthly.
-/** Max monthly search volume across [name, domain base label] for one entity. */
-export async function fetchBrandDemand(
-  name: string,
-  domain: string,
+/**
+ * BATCHED brand demand: ONE search_volume/live call for MANY entities at once
+ * (Google Ads accepts up to ~1000 keywords per task), instead of one call per
+ * competitor. Previously each competitor cost a full-price call for just 2
+ * keywords — the single biggest waste in the Traffic & SEO module. For each
+ * entity we probe [name, domain-base-label] and take the max monthly volume;
+ * a keyword shared by two entities credits both. Keyed by the caller's `key`.
+ */
+export async function fetchBrandDemandBatch(
+  entities: Array<{ key: string; name: string; domain: string }>,
   location: number,
   language = "en",
-): Promise<number | null> {
-  const label = (domain || "").replace(/^www\./, "").split(".")[0] ?? "";
-  const keywords = [...new Set([name, label].map((k) => k.trim().toLowerCase()).filter(Boolean))];
-  if (keywords.length === 0) return null;
-  const volumes = await fetchSearchVolumes(keywords, location, language);
-  let max: number | null = null;
-  for (const v of volumes.values()) if (max == null || v > max) max = v;
-  return max;
+): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  if (entities.length === 0) return out;
+
+  // keyword → the entity keys that probe it (dedup so we send each keyword once).
+  const kwToKeys = new Map<string, string[]>();
+  for (const e of entities) {
+    out.set(e.key, null); // default: no demand found for this entity
+    const label = (e.domain || "").replace(/^www\./, "").split(".")[0] ?? "";
+    const kws = [...new Set([e.name, label].map((k) => k.trim().toLowerCase()).filter(Boolean))];
+    for (const kw of kws) {
+      const arr = kwToKeys.get(kw) ?? [];
+      arr.push(e.key);
+      kwToKeys.set(kw, arr);
+    }
+  }
+  if (kwToKeys.size === 0) return out;
+
+  const volumes = await fetchSearchVolumes([...kwToKeys.keys()], location, language);
+  for (const [kw, keys] of kwToKeys) {
+    const v = volumes.get(kw);
+    if (v == null) continue;
+    for (const key of keys) {
+      const cur = out.get(key);
+      if (cur == null || v > cur) out.set(key, v);
+    }
+  }
+  return out;
 }
 
 // ── 6. Google Trends: relative brand interest (owner-approved 2026-07-17) ─────
