@@ -29,6 +29,7 @@ const TOOL_CATEGORIES: { key: ToolCategory; label: string }[] = [
   { key: "operations", label: "Operations" },
   { key: "llm_usage", label: "AI usage" },
   { key: "provider_health", label: "Provider health" },
+  { key: "knowledge", label: "Regulatory knowledge base" },
 ];
 
 export async function GET() {

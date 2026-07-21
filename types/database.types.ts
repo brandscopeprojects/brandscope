@@ -3604,6 +3604,25 @@ export type Database = {
       }
       get_user_brand_ids: { Args: never; Returns: string[] }
       get_user_organisation_id: { Args: never; Returns: string }
+      match_regulatory_chunks: {
+        Args: {
+          filter_country?: string
+          match_count?: number
+          min_similarity?: number
+          query_embedding: string
+        }
+        Returns: {
+          content: string
+          country: string
+          document_id: string
+          document_name: string
+          page_number: number
+          regulatory_body: string
+          section_title: string
+          similarity: number
+          source_url: string
+        }[]
+      }
       provision_brand: {
         Args: {
           p_brand_name: string

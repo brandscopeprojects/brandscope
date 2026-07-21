@@ -40,6 +40,31 @@ describe("registry", () => {
   });
 });
 
+describe("knowledge tool", () => {
+  it("is registered under the knowledge category", () => {
+    const tool = getTool("search_regulatory_knowledge");
+    expect(tool).toBeDefined();
+    expect(tool!.category).toBe("knowledge");
+  });
+
+  it("requires a non-empty query and clamps the limit", () => {
+    const tool = getTool("search_regulatory_knowledge")!;
+    expect(() => tool.validate({})).toThrow(/query/);
+    expect(() => tool.validate({ query: "   " })).toThrow(/query/);
+    const ok = tool.validate({ query: "gambling tax rate in Ghana", country: "Ghana", limit: 99 });
+    expect(ok.query).toBe("gambling tax rate in Ghana");
+    expect(ok.country).toBe("Ghana");
+    expect(ok.limit).toBe(12); // clamped to MAX_LIMIT
+  });
+
+  it("is withheld when the knowledge category is disabled", () => {
+    const off = mergeConfig({ data: { categories: { knowledge: false } } });
+    expect(enabledTools(off).map((t) => t.name)).not.toContain("search_regulatory_knowledge");
+    const on = mergeConfig({});
+    expect(enabledTools(on).map((t) => t.name)).toContain("search_regulatory_knowledge");
+  });
+});
+
 describe("config normalization", () => {
   it("clamps out-of-range numbers and coerces enums", () => {
     const c = normalizeConfig({

@@ -12,7 +12,11 @@ import { requireInternalAdmin } from "@/lib/auth";
 import { MARKET_VALUES } from "@/lib/onboarding/constants";
 import { COUNTRY_BY_VALUE } from "@/lib/onboarding/countries";
 
-export type UploadResult = { ok: true; documentId: string } | { ok: false; error: string };
+export type UploadResult =
+  | { ok: true; documentId: string; duplicate?: boolean; message?: string }
+  | { ok: false; error: string };
+
+export type ReprocessResult = { ok: true } | { ok: false; error: string };
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25MB
 const DOC_TYPES = new Set(["regulation", "act", "guideline", "licence_condition", "circular", "other"]);
@@ -75,13 +79,45 @@ export async function uploadRegulatoryDocument(formData: FormData): Promise<Uplo
       signal: AbortSignal.timeout(60_000),
       cache: "no-store",
     });
-    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; document_id?: string; error?: string };
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; document_id?: string; duplicate?: boolean; message?: string; error?: string };
     if (!res.ok || !data.ok || !data.document_id) {
       return { ok: false, error: data.error ?? `Upload failed (HTTP ${res.status}).` };
     }
     revalidatePath("/brandscope-admin/knowledge-base");
-    return { ok: true, documentId: data.document_id };
+    return {
+      ok: true,
+      documentId: data.document_id,
+      duplicate: data.duplicate === true,
+      message: data.duplicate ? (data.message ?? "This document has already been uploaded.") : undefined,
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Upload request failed." };
+  }
+}
+
+/** Re-run parsing/chunking/embedding for a failed document, reusing the stored
+ *  R2 PDF (no re-upload, no new record). Idempotent server-side. */
+export async function reprocessRegulatoryDocument(documentId: string): Promise<ReprocessResult> {
+  await requireInternalAdmin();
+  if (!documentId) return { ok: false, error: "Missing document id." };
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!base || !key) return { ok: false, error: "Server is not configured." };
+
+  try {
+    const res = await fetch(`${base}/functions/v1/regulatory-ingest`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ document_id: documentId }),
+      signal: AbortSignal.timeout(30_000),
+      cache: "no-store",
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !data.ok) return { ok: false, error: data.error ?? `Reprocess failed (HTTP ${res.status}).` };
+    revalidatePath("/brandscope-admin/knowledge-base");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Reprocess request failed." };
   }
 }

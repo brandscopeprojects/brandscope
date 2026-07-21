@@ -20,7 +20,8 @@ export type ToolCategory =
   | "campaigns"
   | "operations"
   | "llm_usage"
-  | "provider_health";
+  | "provider_health"
+  | "knowledge";
 
 /** Context handed to every tool. The requesting user is already authorised
  *  (internal_admin/super_admin) by the route; tools receive the service-role

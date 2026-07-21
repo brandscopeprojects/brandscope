@@ -15,15 +15,19 @@ import { KnowledgeStats } from "@/components/admin/KnowledgeStats";
 import { KnowledgeDocumentTable } from "@/components/admin/KnowledgeDocumentTable";
 import { KnowledgeIngestionPipeline } from "@/components/admin/KnowledgeIngestionPipeline";
 import { RegulatoryUploadForm } from "@/components/admin/RegulatoryUploadForm";
+import { KnowledgeAutoRefresh } from "@/components/admin/KnowledgeAutoRefresh";
 import { getKnowledgeBaseData } from "@/lib/data/internal-knowledge";
 
 export const dynamic = "force-dynamic";
 
 export default async function KnowledgeBasePage() {
   const { documents, ingestion, totals } = await getKnowledgeBaseData();
+  // Poll for status while any document is still being embedded.
+  const anyProcessing = documents.some((d) => d.statusRaw === "pending" || d.statusRaw === "processing");
 
   return (
     <div className="space-y-8">
+      <KnowledgeAutoRefresh active={anyProcessing} />
       <PageHeader
         title="Knowledge Base"
         subtitle="Regulatory documents, their embeddings and the ingestion pipeline."

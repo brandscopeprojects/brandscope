@@ -9,6 +9,7 @@ import { StatusPill } from "@/components/intelligence/StatusPill";
 import { marketLabel } from "@/lib/format";
 import { formatTraceTime } from "@/lib/data/internal-agents";
 import type { KnowledgeDocument } from "@/lib/data/internal-knowledge";
+import { KnowledgeDocumentActions } from "@/components/admin/KnowledgeDocumentActions";
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
@@ -66,15 +67,31 @@ const columns: Column<KnowledgeDocument>[] = [
   {
     key: "source",
     header: "Source",
+    cell: (d) =>
+      d.sourceUrl ? (
+        <a
+          href={d.sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-mono text-[13px] text-cobalt hover:underline"
+        >
+          View source
+        </a>
+      ) : (
+        <span className="text-ink-faint">—</span>
+      ),
+  },
+  {
+    key: "actions",
+    header: "Status / retry",
     cell: (d) => (
-      <a
-        href={d.sourceUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-mono text-[13px] text-cobalt hover:underline"
-      >
-        View source
-      </a>
+      <KnowledgeDocumentActions
+        documentId={d.id}
+        statusRaw={d.statusRaw}
+        reviewNotes={d.reviewNotes}
+        needsReview={d.needsReview}
+        updatedAt={d.updatedAt}
+      />
     ),
   },
 ];

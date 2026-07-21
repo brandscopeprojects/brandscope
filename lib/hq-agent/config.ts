@@ -11,12 +11,19 @@ import type { Admin, HqConfig, ToolCategory } from "./types";
 // ── Models (env-configurable; safe defaults per §3/§14) ─────────────────────
 export const DEFAULT_TEXT_MODEL = "gpt-4o-mini";
 export const DEFAULT_REALTIME_MODEL = "gpt-realtime-2.1-mini";
+// The SAME embedding model the Knowledge Base ingestion uses (edge fn
+// _shared/contracts MODELS.embed) — retrieval queries must be embedded with the
+// same model as the stored chunks. Not a second pipeline, just the query side.
+export const DEFAULT_EMBED_MODEL = "text-embedding-3-small";
 
 export function textModel(): string {
   return process.env.OPENAI_TEXT_MODEL?.trim() || DEFAULT_TEXT_MODEL;
 }
 export function realtimeModel(): string {
   return process.env.OPENAI_REALTIME_MODEL?.trim() || DEFAULT_REALTIME_MODEL;
+}
+export function embedModel(): string {
+  return process.env.OPENAI_EMBED_MODEL?.trim() || DEFAULT_EMBED_MODEL;
 }
 
 /** Realtime output voices supported by the config screen (§13-D). */
@@ -55,6 +62,7 @@ const ALL_CATEGORIES: ToolCategory[] = [
   "operations",
   "llm_usage",
   "provider_health",
+  "knowledge",
 ];
 
 export const DEFAULT_SUGGESTIONS = [

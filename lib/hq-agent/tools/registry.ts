@@ -14,6 +14,7 @@ import { campaignTools } from "./campaigns";
 import { operationsTools } from "./operations";
 import { llmUsageTools } from "./llm-usage";
 import { providerHealthTools } from "./provider-health";
+import { knowledgeTools } from "./knowledge";
 
 const ALL_TOOLS: HqTool[] = [
   ...operationsTools, // briefing first — the default management view
@@ -23,6 +24,7 @@ const ALL_TOOLS: HqTool[] = [
   ...campaignTools,
   ...llmUsageTools,
   ...providerHealthTools,
+  ...knowledgeTools,
 ];
 
 const TOOL_TIMEOUT_MS = 8000;

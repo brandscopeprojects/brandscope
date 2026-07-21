@@ -84,6 +84,12 @@ export type KnowledgeDocument = {
   /** Live count of embedded chunks belonging to this document. */
   chunkCount: number;
   embeddingStatus: { label: string; tone: StatusTone };
+  /** Raw lowercased embedding_status ('pending'|'processing'|'complete'|'failed'). */
+  statusRaw?: string;
+  /** Stored failure/review reason (safe to show; no secrets). */
+  reviewNotes?: string | null;
+  needsReview?: boolean;
+  updatedAt?: string | null;
   lastVerifiedAt: string | null;
   effectiveDate: string | null;
 };
@@ -143,7 +149,7 @@ export async function getKnowledgeBaseData(): Promise<KnowledgeBaseData> {
   const { data: docRows } = await admin
     .from("regulatory_documents")
     .select(
-      "id, document_name, document_type, country, regulatory_body, version, source_url, is_active, embedding_status, last_verified_at, effective_date, created_at",
+      "id, document_name, document_type, country, regulatory_body, version, source_url, is_active, embedding_status, review_notes, needs_review, last_verified_at, effective_date, created_at, updated_at",
     )
     .order("created_at", { ascending: false });
 
@@ -172,6 +178,10 @@ export async function getKnowledgeBaseData(): Promise<KnowledgeBaseData> {
     isActive: d.is_active ?? false,
     chunkCount: chunkCounts[i],
     embeddingStatus: embeddingStatusTone(d.embedding_status),
+    statusRaw: (d.embedding_status ?? "").toLowerCase().trim(),
+    reviewNotes: d.review_notes,
+    needsReview: d.needs_review ?? false,
+    updatedAt: d.updated_at,
     lastVerifiedAt: d.last_verified_at,
     effectiveDate: d.effective_date,
   }));

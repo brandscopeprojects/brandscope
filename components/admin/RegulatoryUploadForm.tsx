@@ -119,7 +119,9 @@ export function RegulatoryUploadForm() {
           >
             {pending ? "Uploading…" : "Upload & ingest"}
           </button>
-          {result?.ok ? (
+          {result?.ok && result.duplicate ? (
+            <span className="text-sm text-watch">{result.message ?? "This document has already been uploaded."}</span>
+          ) : result?.ok ? (
             <span className="text-sm text-opportunity">
               Uploaded — ingestion started (status will update to “complete”).
             </span>

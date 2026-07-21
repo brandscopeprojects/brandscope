@@ -21,7 +21,7 @@ import { serviceClient, type SupabaseClient } from "../_shared/supabase.ts";
 import { json, preflight, isAuthorizedInternal, isServiceBearer } from "../_shared/http.ts";
 import { SERVICE_ROLE_KEY } from "../_shared/env.ts";
 import { embed } from "../_shared/llm.ts";
-import { r2Put } from "../_shared/r2.ts";
+import { r2Put, r2Get } from "../_shared/r2.ts";
 
 const CHUNK_CHARS = 1200;
 const CHUNK_OVERLAP = 150;
@@ -197,10 +197,47 @@ Deno.serve(async (req) => {
   if (!authed) return json({ error: "unauthorized" }, 401);
 
   const sb = serviceClient();
+  const contentType = req.headers.get("content-type") ?? "";
+
+  // ── Reprocess path: JSON { document_id } re-runs parse/chunk/embed against the
+  //    ALREADY-STORED R2 PDF. No re-upload, no new row. Idempotent — existing
+  //    chunks are deleted first so retries never duplicate chunk rows.
+  if (contentType.includes("application/json")) {
+    let body: { document_id?: string };
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: "invalid json body" }, 400);
+    }
+    const docId = body.document_id;
+    if (!docId) return json({ error: "document_id is required" }, 400);
+    const { data: rd, error: rdErr } = await sb
+      .from("regulatory_documents")
+      .select("id, r2_path")
+      .eq("id", docId)
+      .maybeSingle();
+    if (rdErr || !rd) return json({ error: "document not found" }, 404);
+    let bytes: Uint8Array;
+    try {
+      bytes = await r2Get(rd.r2_path);
+    } catch (e) {
+      return json({ error: `R2 fetch failed: ${e instanceof Error ? e.message : String(e)}` }, 502);
+    }
+    // Idempotency: clear any prior/partial chunks, reset status, then reprocess.
+    await sb.from("document_chunks").delete().eq("document_id", docId);
+    await sb.from("regulatory_documents").update({ embedding_status: "processing", needs_review: false, review_notes: null }).eq("id", docId);
+    await logStep(sb, docId, "reprocess", "started", { r2_path: rd.r2_path, bytes: bytes.byteLength });
+    const bg = processDocument(sb, docId, bytes);
+    try {
+      (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil?.(bg);
+    } catch {
+      // not on the edge runtime (local) — let it run inline
+    }
+    return json({ ok: true, document_id: docId, embedding_status: "processing", reprocessed: true });
+  }
 
   // 1. Gather bytes + metadata from the multipart upload (upload-only — the
   //    service never fetches documents from external URLs).
-  const contentType = req.headers.get("content-type") ?? "";
   if (!contentType.includes("multipart/form-data")) {
     return json({ error: "expected multipart/form-data with a PDF 'file'" }, 400);
   }
@@ -228,8 +265,28 @@ Deno.serve(async (req) => {
   if (bytes.byteLength === 0) return json({ error: "empty file" }, 400);
   if (!meta.country || !meta.regulatory_body) return json({ error: "country and regulatory_body are required" }, 400);
 
-  // 2. Store to R2.
+  // 2. Duplicate detection (content hash). If the exact file already exists, do
+  //    NOT re-store / re-parse / re-embed — return the existing record so the
+  //    admin sees "already uploaded" and no repeat embedding cost is incurred.
+  //    (A unique index on file_hash also guards at the DB level — migration 21.)
   const hash = await sha256Bytes(bytes);
+  const { data: dup } = await sb
+    .from("regulatory_documents")
+    .select("id, document_name, embedding_status")
+    .eq("file_hash", hash)
+    .maybeSingle();
+  if (dup) {
+    return json({
+      ok: true,
+      duplicate: true,
+      document_id: dup.id,
+      document_name: dup.document_name,
+      embedding_status: dup.embedding_status,
+      message: "This document has already been uploaded.",
+    });
+  }
+
+  // 3. Store to R2.
   const r2Path = `regulatory/${slugify(meta.country)}/${hash}.pdf`;
   try {
     await r2Put(r2Path, bytes, "application/pdf");
@@ -237,7 +294,7 @@ Deno.serve(async (req) => {
     return json({ error: `R2 upload failed: ${e instanceof Error ? e.message : String(e)}` }, 502);
   }
 
-  // 3. Insert the document row (processing) — dedupe on file_hash.
+  // 4. Insert the document row (processing). file_hash is unique (migration 21).
   const { data: doc, error: docErr } = await sb
     .from("regulatory_documents")
     .insert({
