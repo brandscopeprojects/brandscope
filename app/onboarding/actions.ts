@@ -17,8 +17,11 @@ import {
 import {
   COMPETITOR_MAX,
   MARKET_VALUES,
+  classifyOnboardingSuggestion,
+  EMPTY_ONBOARDING_SUGGESTION,
   type DetectedBrandResult,
   type OnboardingSuggestion,
+  type SuggestionResult,
 } from "./action-types";
 
 /**
@@ -32,7 +35,6 @@ export async function detectBrand(domain: string): Promise<DetectedBrandResult> 
   return { domain: detected.domain, name: detected.name, tier: detected.tier };
 }
 
-const EMPTY_SUGGESTION: OnboardingSuggestion = { name: null, markets: [], competitors: [] };
 const VALID_TIERS = new Set(["dominant", "challenger", "mid_market", "niche"]);
 
 /**
@@ -45,10 +47,10 @@ const VALID_TIERS = new Set(["dominant", "challenger", "mid_market", "niche"]);
 export async function suggestOnboarding(
   rawDomain: string,
   confirmedMarkets?: string[],
-): Promise<OnboardingSuggestion> {
+): Promise<SuggestionResult> {
   await requireUser();
   const domain = normaliseDomain(rawDomain);
-  if (!domain) return EMPTY_SUGGESTION;
+  if (!domain) return classifyOnboardingSuggestion({ suggestions: EMPTY_ONBOARDING_SUGGESTION });
 
   // When the user has confirmed markets in the wizard, competitor suggestion is
   // re-run scoped to those markets (brand → country → competitors, in order).
@@ -71,10 +73,20 @@ export async function suggestOnboarding(
         cache: "no-store",
       },
     );
-    if (!res.ok) return EMPTY_SUGGESTION;
-    const data = (await res.json()) as Partial<OnboardingSuggestion>;
+    const data = (await res.json().catch(() => null)) as
+      | (Partial<OnboardingSuggestion> & { ok?: boolean; request_id?: string })
+      | null;
+    const requestId = data && typeof data.request_id === "string" ? data.request_id : undefined;
+
+    // A non-2xx OR the function's own { ok:false } envelope is a real failure —
+    // distinct from a successful-but-empty result. We never surface the backend's
+    // raw error string; the classifier applies a generic message + the requestId.
+    if (!res.ok || !data || data.ok === false) {
+      return classifyOnboardingSuggestion({ errored: true, requestId });
+    }
+
     // Re-validate here: the function already normalises, but this is the trust boundary.
-    return {
+    const suggestions: OnboardingSuggestion = {
       name: typeof data.name === "string" && data.name.trim() ? data.name.trim() : null,
       markets: (Array.isArray(data.markets) ? data.markets : []).filter((m) =>
         MARKET_VALUES.includes(m),
@@ -88,8 +100,9 @@ export async function suggestOnboarding(
         .filter((c) => c.domain.length > 0 && c.domain !== domain)
         .slice(0, 5),
     };
+    return classifyOnboardingSuggestion({ suggestions, requestId });
   } catch {
-    return EMPTY_SUGGESTION;
+    return classifyOnboardingSuggestion({ errored: true });
   }
 }
 

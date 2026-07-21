@@ -22,6 +22,7 @@ import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
 import { resolveModel } from "../_shared/router.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import { dfsPost, firstResult, MARKET_LOCATION, languageCode } from "../_shared/dataforseo.ts";
+import { getOrFetchMarketIntel } from "../_shared/market-cache.ts";
 
 export const PROMPT_VERSION = "onboarding-suggest@v1";
 
@@ -431,6 +432,17 @@ function normalise(raw: Partial<Suggestion>, ownDomain: string): Suggestion {
   return { name, markets: [...new Set(markets)], competitors };
 }
 
+/** Safe structured log for one detection attempt. Emits a single JSON line to the
+ *  edge-function logs. NEVER logs API keys, auth headers, prompts, or raw provider
+ *  payloads — only the operational fields needed to diagnose a failure. */
+function logLine(fields: Record<string, unknown>): void {
+  try {
+    console.log(JSON.stringify({ evt: "onboarding_suggest", ...fields }));
+  } catch {
+    // logging must never affect the request
+  }
+}
+
 Deno.serve(async (req) => {
   const pf = preflight(req);
   if (pf) return pf;
@@ -462,21 +474,35 @@ Deno.serve(async (req) => {
     .slice(0, 10);
 
   const sb = serviceClient();
-  // Homepage + live SERP evidence in parallel (SERP only when a market is known).
+  const requestId = crypto.randomUUID();
+  const started = Date.now();
   const firstMarket = confirmedMarkets[0];
-  // SERP evidence is market-level → served from market_intel_cache when another
-  // signup/scan already fetched this market this week (fetch-once-per-week rule).
-  const [homepage, serpDomains] = await Promise.all([
-    fetchHomepageText(domain),
-    firstMarket
-      ? getOrFetchMarketIntel<string[]>(sb, firstMarket, "serp_betting", () =>
-          fetchSerpCompetitorEvidence(firstMarket, ALLOWED_MARKETS[firstMarket] ?? firstMarket),
-        ).then((r) => r.value).catch(() => [] as string[])
-      : Promise.resolve([] as string[]),
-  ]);
-  const userPrompt = buildPrompt(domain, homepage, confirmedMarkets, serpDomains);
+  const resolvedLocation = firstMarket ? (MARKET_LOCATION[firstMarket] ?? null) : null;
+  // Progress marker → recorded as failure_stage if we throw. Every stage below is
+  // inside the try so NO known async op (homepage, market-intel, SERP, Claude,
+  // parse, liveness) can escape the handler as a bare 500.
+  let stage = "init";
+  let homepageOk = false;
+  let marketIntelOk = false;
 
   try {
+    // Homepage + live SERP evidence in parallel (SERP only when a market is
+    // known). Both are OPTIONAL grounding: each degrades to ""/[] on failure so a
+    // provider hiccup never fails the request — Claude can still suggest.
+    stage = "evidence";
+    const [homepage, serpDomains] = await Promise.all([
+      fetchHomepageText(domain),
+      firstMarket
+        ? getOrFetchMarketIntel<string[]>(sb, firstMarket, "serp_betting", () =>
+            fetchSerpCompetitorEvidence(firstMarket, ALLOWED_MARKETS[firstMarket] ?? firstMarket),
+          ).then((r) => r.value).catch(() => [] as string[])
+        : Promise.resolve([] as string[]),
+    ]);
+    homepageOk = homepage.length > 0;
+    marketIntelOk = serpDomains.length > 0;
+    const userPrompt = buildPrompt(domain, homepage, confirmedMarkets, serpDomains);
+
+    stage = "llm";
     const res = await loggedLlm(
       sb,
       {
@@ -494,11 +520,15 @@ Deno.serve(async (req) => {
           temperature: 0.2,
         }),
     );
+
+    stage = "parse";
     const suggestion = normalise(parseJsonFromModel<Partial<Suggestion>>(res.text), domain);
+    const rawCount = suggestion.competitors.length;
 
     // Post-model validation:
     // 1. Self-family exclusion — the same operator's other-country site is not a
     //    competitor (premierbet.co.zm vs premierbet.co.mz).
+    stage = "liveness";
     const ownLabel = baseLabel(domain);
     const notSelfFamily = suggestion.competitors.filter(
       (c) => baseLabel(c.domain) !== ownLabel,
@@ -509,11 +539,41 @@ Deno.serve(async (req) => {
     const competitors = notSelfFamily.filter((_, i) => probes[i]);
     const dropped = suggestion.competitors.length - competitors.length;
 
-    return json({ ok: true, ...suggestion, competitors, dropped_unverified: dropped });
+    logLine({
+      request_id: requestId,
+      domain,
+      selected_market: firstMarket ?? null,
+      resolved_location_code: resolvedLocation,
+      homepage_fetch_success: homepageOk,
+      market_intel_success: marketIntelOk,
+      provider_status: "ok",
+      suggestion_count: rawCount,
+      filtered_count: competitors.length,
+      duration_ms: Date.now() - started,
+      failure_stage: null,
+    });
+
+    return json({ ok: true, request_id: requestId, ...suggestion, competitors, dropped_unverified: dropped });
   } catch (e) {
-    // Suggestions are best-effort: the wizard falls back to manual entry.
+    // Best-effort: convert ANY failure into the normal JSON envelope (HTTP 200 so
+    // the caller reads a structured body, never a bare 500). Detail stays in logs.
+    const message = e instanceof Error ? e.message : String(e);
+    logLine({
+      request_id: requestId,
+      domain,
+      selected_market: firstMarket ?? null,
+      resolved_location_code: resolvedLocation,
+      homepage_fetch_success: homepageOk,
+      market_intel_success: marketIntelOk,
+      provider_status: "error",
+      suggestion_count: 0,
+      filtered_count: 0,
+      duration_ms: Date.now() - started,
+      failure_stage: stage,
+      error_message: message.slice(0, 300),
+    });
     return json(
-      { ok: false, name: null, markets: [], competitors: [], error: e instanceof Error ? e.message : String(e) },
+      { ok: false, request_id: requestId, name: null, markets: [], competitors: [], error: "detection_failed" },
       200,
     );
   }

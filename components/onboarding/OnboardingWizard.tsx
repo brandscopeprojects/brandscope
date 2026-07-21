@@ -233,7 +233,9 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
   // Setup agent (onboarding-suggest). User edits always win over late results.
   const [suggestedMarkets, setSuggestedMarkets] = useState<string[]>([]);
   const [suggesting, setSuggesting] = useState(false);
-  const [suggestFailed, setSuggestFailed] = useState(false);
+  // Distinguish a real detection FAILURE from a successful-but-empty result — the
+  // two get different, non-alarming messages (never a raw backend error).
+  const [suggestState, setSuggestState] = useState<"error" | "empty" | null>(null);
   const [skippedAnalyzing, setSkippedAnalyzing] = useState(false);
   const [competitorsPrefilled, setCompetitorsPrefilled] = useState(false);
   const marketsTouched = useRef(false);
@@ -245,7 +247,7 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
     if (!key || suggestedForDomain.current === key) return;
     suggestedForDomain.current = key;
     setSuggesting(true);
-    setSuggestFailed(false);
+    setSuggestState(null);
     // Deterministic first: a ccTLD IS the country (gsb.ug → Uganda). Applies
     // instantly, no network, and survives any setup-agent failure. The agent's
     // richer result below can add markets; the user's edits always win.
@@ -259,7 +261,8 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
     // Pass the ccTLD-derived market so the setup agent grounds competitor
     // suggestions in live SERP evidence for THAT market from the first call.
     suggestOnboarding(domain, tldMarket ? [tldMarket] : undefined)
-      .then((s) => {
+      .then((result) => {
+        const s = result.suggestions;
         setSuggestedMarkets(s.markets);
         setBrandName((prev) => (prev.trim() ? prev : (s.name ?? prev)));
         if (!marketsTouched.current && s.markets.length > 0) {
@@ -276,15 +279,13 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
           );
           setCompetitorsPrefilled(true);
         }
-        // Detection "succeeded" but found nothing usable → treat as a failure so
-        // the user is told loudly instead of silently facing empty fields.
-        if (s.markets.length === 0 && s.competitors.length === 0) {
-          setSuggestFailed(true);
-        }
+        // success → clear; empty/error → show the matching (distinct) message so
+        // the user is told what happened instead of silently facing empty fields.
+        setSuggestState(result.status === "success" ? null : result.status);
       })
       .catch(() => {
         // The wizard still works fully manually — but say so, don't fail silent.
-        setSuggestFailed(true);
+        setSuggestState("error");
       })
       .finally(() => setSuggesting(false));
   }
@@ -303,23 +304,25 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
     if (markets.length === 0 || marketSuggesting) return;
     setMarketSuggesting(true);
     try {
-      const s = await suggestOnboarding(brandDomain, markets);
-      if (s.competitors.length > 0) {
+      const result = await suggestOnboarding(brandDomain, markets);
+      const found = result.suggestions.competitors;
+      if (result.status === "success" && found.length > 0) {
         setCompetitors((prev) => {
           const kept = prev.filter((c) => c.domain.trim().length > 0);
           const seen = new Set(kept.map((c) => c.domain.trim().toLowerCase()));
-          const added = s.competitors
+          const added = found
             .filter((c) => c.domain && !seen.has(c.domain.toLowerCase()))
             .map((c) => ({ ...blankRow(), domain: c.domain, name: c.name, tier: c.tier }));
           return [...kept, ...added].slice(0, COMPETITOR_MAX);
         });
         setCompetitorsPrefilled(true);
-        setSuggestFailed(false);
+        setSuggestState(null);
       } else {
-        setSuggestFailed(true);
+        // error vs empty stay distinct (empty when the request was fine but found none).
+        setSuggestState(result.status === "error" ? "error" : "empty");
       }
     } catch {
-      setSuggestFailed(true);
+      setSuggestState("error");
     } finally {
       setMarketSuggesting(false);
     }
@@ -561,11 +564,12 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
                     />
                   </div>
 
-                  {suggestFailed && (
+                  {suggestState !== null && (
                     <div className="flex items-center justify-between gap-3 rounded-chip border border-watch/30 bg-watch/10 px-4 py-3 text-xs leading-relaxed text-ink-secondary">
                       <span>
-                        We couldn&rsquo;t auto-detect your markets and competitors this
-                        time. Add them manually below, or try detection again.
+                        {suggestState === "error"
+                          ? "Competitor detection failed. Please retry or add competitors manually."
+                          : "We couldn’t find reliable competitors for this market. Add them manually or try another market."}
                       </span>
                       <button
                         type="button"
