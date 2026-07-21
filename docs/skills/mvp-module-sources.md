@@ -17,7 +17,7 @@
 ### 2. GEO  ✓ FULL (4 platforms)  → writes `geo_cache`
 - **Provider routing (GEO v2, 2026-07-21 — cost reduction):**
   - **ChatGPT → direct OpenAI** Responses API + `web_search_preview` tool (existing `OPENAI_API_KEY`).
-  - **Claude → direct Anthropic** Messages API + `web_search_20250305` server tool (existing `ANTHROPIC_API_KEY`).
+  - **Claude → direct Anthropic** Messages API + `web_search_20250305` server tool (existing `ANTHROPIC_API_KEY`). Runs LIGHT — **Haiku + `max_uses:1` + `max_tokens:800`** — because direct Sonnet web-search (~10k–35k tokens/call) exhausted the shared Anthropic workspace quota mid-scan (2026-07-21).
   - **Gemini + Perplexity → DataForSEO** `ai_optimization/gemini|perplexity/llm_responses/live` (each requires `model_name`; `web_search:true`).
   - Direct providers cost ~$0.01/query vs ~$0.20/query via DataForSEO. **Gemini is the first engine to disable** (env `GEO_DISABLED_ENGINES=gemini`) — its grounding fee dominates.
   - Mentions still via `ai_optimization/llm_mentions/search/live` + `…/aggregated_metrics/live`.

@@ -213,10 +213,14 @@ export async function runSingleQuery(
       return extractAnswerText(firstResult<Record<string, unknown>>(body)[0] ?? {});
     }
 
+    // Claude GEO probe runs LIGHT (owner decision 2026-07-21): Haiku + a single
+    // web search + tight max_tokens. Direct Sonnet web-search was ~$0.09/call and
+    // its 10k–35k-token context is what exhausted the shared Anthropic workspace
+    // quota mid-scan — Haiku/1-search keeps GEO's Anthropic footprint small.
     const call = () =>
       platform.provider === "openai"
         ? callOpenAIWebSearch({ prompt })
-        : callClaudeWebSearch({ prompt });
+        : callClaudeWebSearch({ prompt, model: MODELS.haiku, maxSearches: 1, maxTokens: 800 });
 
     const result = log
       ? await loggedLlm(
