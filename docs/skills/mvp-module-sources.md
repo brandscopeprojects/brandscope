@@ -15,8 +15,15 @@
 - **Haiku:** structure keyword-gap rows, flag significant WoW rank changes. (Mostly already-structured → minimal LLM.)
 
 ### 2. GEO  ✓ FULL (4 platforms)  → writes `geo_cache`
-- **Endpoints:** `ai_optimization/chat_gpt/llm_responses/task_post` (Standard Queue), `…/claude/llm_responses/task_post`, `…/gemini/llm_responses/task_post`, `…/perplexity/llm_responses/live` (Live only); `ai_optimization/llm_mentions/search/live` + `…/aggregated_metrics/live`. Poll `…/tasks_ready` + `…/task_get/{id}`.
-- **Queries:** from `geo_query_templates` (15-query set, brand/market injected).
+- **Provider routing (GEO v2, 2026-07-21 — cost reduction):**
+  - **ChatGPT → direct OpenAI** Responses API + `web_search_preview` tool (existing `OPENAI_API_KEY`).
+  - **Claude → direct Anthropic** Messages API + `web_search_20250305` server tool (existing `ANTHROPIC_API_KEY`).
+  - **Gemini + Perplexity → DataForSEO** `ai_optimization/gemini|perplexity/llm_responses/live` (each requires `model_name`; `web_search:true`).
+  - Direct providers cost ~$0.01/query vs ~$0.20/query via DataForSEO. **Gemini is the first engine to disable** (env `GEO_DISABLED_ENGINES=gemini`) — its grounding fee dominates.
+  - Mentions still via `ai_optimization/llm_mentions/search/live` + `…/aggregated_metrics/live`.
+- **Queries:** from `geo_query_templates` (15-query set). Split by kind:
+  - **Market queries** (brand-agnostic, e.g. "best betting sites in {market}") — fetched **once per (market, week, engine)** and SHARED across every brand in the market via `market_intel_cache` (kind `geo:<engine>`). Biggest per-brand cost cut.
+  - **Brand queries** (name `{brand}`) — per-brand reputation checks, run **direct providers only**, never cached, never on the pay-per-call DataForSEO engines.
 - **Haiku:** per AI response → `{mentioned bool, sentiment, position 1–10, exact quote}`. Compute AI Visibility Score (mentions×50 + sentiment×30 + position×20).
 - **EXCLUDED at MVP:** Grok (xAI), Meta/Llama (Together), Copilot. Leave `geo_cache.grok_*`/`meta_ai_*` null.
 

@@ -6,17 +6,23 @@
 // cache table (geo_cache), logs every LLM call to agent_job_logs, and on the
 // fan-out-completing call enqueues synthesis.
 //
-// Sources (mvp-module-sources.md §2 GEO + §3 AEO):
-//   - ChatGPT / Claude / Gemini → DataForSEO ai_optimization/<engine>/llm_responses
-//        task_post + poll task_get (Standard Queue), bounded to ~60s.
-//   - Perplexity → ai_optimization/perplexity/llm_responses/live (Live only).
-//   - Mentions → ai_optimization/llm_mentions/search/live + aggregated_metrics/live.
-//   - AEO → serp/google/organic/live/advanced (featured snippets + PAA).
+// Sources (mvp-module-sources.md §2 GEO + §3 AEO) — GEO v2 provider routing:
+//   - ChatGPT   → OpenAI Responses API + web_search (direct, our OPENAI key).
+//   - Claude    → Anthropic Messages + web_search server tool (direct, our key).
+//   - Gemini    → DataForSEO ai_optimization/gemini/llm_responses/live.
+//   - Perplexity→ DataForSEO ai_optimization/perplexity/llm_responses/live.
+//   - Mentions  → ai_optimization/llm_mentions/search/live + aggregated_metrics/live.
+//   - AEO       → serp/google/organic/live/advanced (featured snippets + PAA).
 // 4 platforms ONLY. Grok (xAI) + Meta/Llama (Together) are Phase 2 → geo_cache
 // grok_* columns left NULL, never faked. (geo_cache has no meta_ai_* columns.)
 //
-// Budget: ≤90s (data-flow-rules.md §4). Poll waits are bounded; engines run with
-// Promise.allSettled so one engine failing never blocks the others.
+// Cost model (GEO v2): brand-agnostic MARKET queries are fetched once per
+// (market, week, engine) and SHARED across every brand via market_intel_cache;
+// brand-specific queries run direct-provider only. ChatGPT/Claude direct replace
+// the ~$0.20/query DataForSEO route with ~$0.01/query token cost.
+//
+// Budget: ≤90s (data-flow-rules.md §4). Per-call waits are bounded; engines run
+// with Promise.allSettled so one engine failing never blocks the others.
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { json, preflight, isAuthorizedInternal } from "../_shared/http.ts";
@@ -25,25 +31,39 @@ import { completeModule, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import type { ScanModuleMessage } from "../_shared/contracts.ts";
 import { languageCode } from "../_shared/dataforseo.ts";
+import { optionalEnv } from "../_shared/env.ts";
+import { getOrFetchMarketIntelKeyed } from "../_shared/market-cache.ts";
 import {
   PLATFORMS,
   loadQueries,
-  runEngine,
+  runQueriesConcurrent,
   analysePlatform,
   visibilityScore,
   fetchMentionMetrics,
   fetchAeo,
+  type EngineResponse,
+  type GeoQuery,
   type PlatformAnalysis,
+  type PlatformDef,
 } from "./geo.ts";
 
-// Bounded per-call window (kept for signature compatibility with runEngine).
-const ENGINE_MAX_WAIT_MS = 60_000;
+// COST CONTROL (GEO v2).
+// Market queries (brand-agnostic, e.g. "best betting sites in {market}") run once
+// per (market, week, engine) and are SHARED across every brand in the market via
+// market_intel_cache — the biggest per-brand cost cut. Brand queries (name the
+// brand) can't be shared, so they run direct-provider only (ChatGPT/Claude tokens
+// are cheap) and never touch the expensive DataForSEO engines.
+const MARKET_QUERY_LIMIT = 5; // shared across the market; ChatGPT/Claude direct + Gemini/Perplexity cached
+const BRAND_QUERY_LIMIT = 3; // per-brand reputation checks, direct providers only
 
-// COST CONTROL: each GEO query costs ~$0.03–0.09 PER ENGINE (web-search-grounded
-// /live), so ~$0.20/query across the 4 engines. We therefore sample the top N
-// queries of the active set rather than firing all ~15 — N is the main GEO cost
-// dial. 5 queries ≈ ~$1/scan of GEO; lower it to cut cost, raise for coverage.
-const GEO_QUERY_LIMIT = 5;
+// Engine kill-switch dial: comma-separated platform keys to skip (Gemini is the
+// first to cut — its DataForSEO grounding fee dominates GEO cost). e.g. "gemini".
+const DISABLED_ENGINES = new Set(
+  (optionalEnv("GEO_DISABLED_ENGINES") ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+);
 
 Deno.serve(withMeter(async (req) => {
   const pf = preflight(req);
@@ -69,9 +89,13 @@ Deno.serve(withMeter(async (req) => {
   const market = msg.markets?.[0] ?? "nigeria";
 
   try {
-    // 1. Load the active GEO query set (brand name + market injected), then cap to
-    //    GEO_QUERY_LIMIT to bound per-scan cost (web-search /live is ~$0.20/query).
-    const queries = (await loadQueries(sb, msg.brand_name, market)).slice(0, GEO_QUERY_LIMIT);
+    // 1. Load the active GEO query set (brand name + market injected), then split:
+    //    - MARKET queries (brand-agnostic) → shared across the market via cache.
+    //    - BRAND queries (name the brand)  → per-brand, direct providers only.
+    const allLoaded = await loadQueries(sb, msg.brand_name, market);
+    const marketQueries = allLoaded.filter((q) => !q.brandSpecific).slice(0, MARKET_QUERY_LIMIT);
+    const brandQueries = allLoaded.filter((q) => q.brandSpecific).slice(0, BRAND_QUERY_LIMIT);
+    const queries = [...marketQueries, ...brandQueries];
     if (queries.length === 0) {
       // No templates seeded → we cannot run the module meaningfully. Treat as
       // partial: record health, do not write a fabricated row.
@@ -88,10 +112,16 @@ Deno.serve(withMeter(async (req) => {
       return await finish(sb, msg, "partial");
     }
 
-    // 2. Dispatch the four engines in parallel (allSettled — isolate failures).
+    const activeEngines = PLATFORMS.filter((p) => !DISABLED_ENGINES.has(p.key));
+    const logCtx = { sb, scanJobId: msg.scan_job_id, brandId: msg.brand_id };
+
+    // 2. Dispatch the active engines in parallel (allSettled — isolate failures).
+    //    Market queries hit the shared cache; brand queries run direct-only.
     const engineResults = await Promise.allSettled(
-      PLATFORMS.map((p) =>
-        runEngine(p, queries, { maxWaitMs: ENGINE_MAX_WAIT_MS }).then((responses) => ({ p, responses })),
+      activeEngines.map((p) =>
+        gatherEngineResponses(sb, p, market, marketQueries, brandQueries, logCtx).then(
+          (responses) => ({ p, responses }),
+        ),
       ),
     );
 
@@ -183,8 +213,8 @@ Deno.serve(withMeter(async (req) => {
     );
     if (upsertError) throw new Error(`geo_cache upsert: ${upsertError.message}`);
 
-    // 9. Health + completion. Partial if not all four engines returned data.
-    const fullCoverage = engineSuccessCount === PLATFORMS.length && aiVisibilityScore !== null;
+    // 9. Health + completion. Partial if not all active engines returned data.
+    const fullCoverage = engineSuccessCount === activeEngines.length && aiVisibilityScore !== null;
     await recordFeatureHealth(sb, {
       scan_job_id: msg.scan_job_id,
       brand_id: msg.brand_id,
@@ -194,7 +224,7 @@ Deno.serve(withMeter(async (req) => {
       status: fullCoverage ? "passed" : "partial",
       root_cause: fullCoverage
         ? null
-        : `${engineSuccessCount}/${PLATFORMS.length} answer engines returned data`,
+        : `${engineSuccessCount}/${activeEngines.length} answer engines returned data`,
     });
 
     return await finish(sb, msg, fullCoverage ? "ok" : "partial");
@@ -225,6 +255,54 @@ Deno.serve(withMeter(async (req) => {
     return json({ ok: false, error: message }, 500);
   }
 }));
+
+/**
+ * Collect one engine's answers for a brand: brand-agnostic MARKET queries served
+ * from the shared (market, week, engine) cache — fetched once and reused by every
+ * brand in the market — plus per-brand BRAND queries run only on direct providers
+ * (OpenAI/Anthropic), never on the pay-per-call DataForSEO engines. Returns the
+ * per-query EngineResponse[] the classifier consumes. Never throws.
+ */
+async function gatherEngineResponses(
+  sb: ReturnType<typeof serviceClient>,
+  platform: PlatformDef,
+  market: string,
+  marketQueries: GeoQuery[],
+  brandQueries: GeoQuery[],
+  logCtx: { sb: ReturnType<typeof serviceClient>; scanJobId: string; brandId: string },
+): Promise<EngineResponse[]> {
+  const responses: EngineResponse[] = [];
+
+  // Shared market queries: one cache row per (market, week, engine); only the
+  // MISSING query texts are fetched (getOrFetchMarketIntelKeyed dedupes + merges).
+  if (marketQueries.length > 0) {
+    const texts = marketQueries.map((q) => q.text);
+    const answers = await getOrFetchMarketIntelKeyed<string>(
+      sb,
+      market,
+      `geo:${platform.key}`,
+      texts,
+      (missing) => runQueriesConcurrent(platform, missing, logCtx),
+    );
+    for (const q of marketQueries) {
+      const text = answers[q.text.toLowerCase().trim()] ?? "";
+      if (text) responses.push({ query: q.text, category: q.category, text });
+    }
+  }
+
+  // Brand queries: reputation checks that can't be market-shared. Run them only
+  // on direct providers (cheap tokens); DataForSEO engines skip them entirely.
+  if (brandQueries.length > 0 && platform.provider !== "dataforseo") {
+    const texts = brandQueries.map((q) => q.text);
+    const answers = await runQueriesConcurrent(platform, texts, logCtx);
+    for (const q of brandQueries) {
+      const text = answers[q.text] ?? "";
+      if (text) responses.push({ query: q.text, category: q.category, text });
+    }
+  }
+
+  return responses;
+}
 
 /**
  * Record the module outcome on scan_jobs; if this call completed the fan-out,

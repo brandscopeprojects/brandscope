@@ -17,7 +17,14 @@
 
 import { dfsPost, firstResult } from "../_shared/dataforseo.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
-import { callClaude, loggedLlm, parseJsonFromModel, type LlmResult } from "../_shared/llm.ts";
+import {
+  callClaude,
+  callClaudeWebSearch,
+  callOpenAIWebSearch,
+  loggedLlm,
+  parseJsonFromModel,
+  type LlmResult,
+} from "../_shared/llm.ts";
 import { MODELS } from "../_shared/contracts.ts";
 import { resolveRoute } from "../_shared/router.ts";
 import { loadPrompt, renderPrompt } from "../_shared/prompts.ts";
@@ -30,31 +37,38 @@ import type { SupabaseClient } from "../_shared/supabase.ts";
 /** The four MVP answer engines and their geo_cache column prefix. */
 export type PlatformKey = "chatgpt" | "claude" | "gemini" | "perplexity";
 
+/**
+ * GEO v2 provider routing (owner decision 2026-07-21, cost reduction):
+ *   - openai      → ChatGPT direct, OpenAI Responses API + web_search_preview.
+ *   - anthropic   → Claude direct, Anthropic Messages + web_search server tool.
+ *   - dataforseo  → Gemini + Perplexity via ai_optimization/<engine>/llm_responses.
+ * Direct providers use our existing keys at ~$0.01/query vs ~$0.20/query through
+ * DataForSEO; Gemini (grounding-fee heavy) is the first engine to disable.
+ */
+export type EngineProvider = "openai" | "anthropic" | "dataforseo";
+
 export type PlatformDef = {
   key: PlatformKey;
   label: string;
-  /** DataForSEO ai_optimization path segment for this engine. */
+  provider: EngineProvider;
+  /** DataForSEO ai_optimization path segment (dataforseo provider only). */
   segment: string;
-  /** DataForSEO model_name for llm_responses/live. REQUIRED by chat_gpt/claude/
-   *  gemini (omitting it → 40501 Invalid Field 'model_name'); Perplexity searches
-   *  natively and needs none. Update these as DataForSEO's /models list evolves. */
+  /** DataForSEO model_name for llm_responses/live (dataforseo provider only).
+   *  REQUIRED by DataForSEO engines (omitting it → 40501 Invalid Field). */
   model?: string;
-  /** Send `web_search: true` so answers mirror what a real user sees (grounded).
-   *  Perplexity already searches natively, so we don't pass the flag there. */
+  /** Send `web_search: true` (DataForSEO) so answers mirror what a real user sees. */
   webSearch?: boolean;
 };
 
-// ALL FOUR engines use the SYNCHRONOUS /live endpoint (DataForSEO support,
-// 2026-07-20: /live is available for every engine, ≤120s turnaround — the async
-// task_post flow never fit our serverless budget). EVERY engine — Perplexity
-// included — REQUIRES a model_name (omitting it → 40501, null result: this is why
-// GEO was really 0/4, not 1/4). Models are web-search-capable so answers mirror
-// what a real user sees; update them as DataForSEO's /models list evolves.
+// ChatGPT + Claude now run DIRECT (OpenAI / Anthropic keys); Gemini + Perplexity
+// stay on DataForSEO's SYNCHRONOUS /live endpoint (each DataForSEO engine REQUIRES
+// a model_name — omitting it → 40501). Models are web-search-capable so answers
+// mirror what a real user sees; update them as the providers' model lists evolve.
 export const PLATFORMS: PlatformDef[] = [
-  { key: "chatgpt", label: "ChatGPT", segment: "chat_gpt", model: "o4-mini", webSearch: true },
-  { key: "claude", label: "Claude", segment: "claude", model: "claude-sonnet-4-6", webSearch: true },
-  { key: "gemini", label: "Gemini", segment: "gemini", model: "gemini-3.5-flash", webSearch: true },
-  { key: "perplexity", label: "Perplexity", segment: "perplexity", model: "sonar", webSearch: true },
+  { key: "chatgpt", label: "ChatGPT", provider: "openai", segment: "chat_gpt", webSearch: true },
+  { key: "claude", label: "Claude", provider: "anthropic", segment: "claude", webSearch: true },
+  { key: "gemini", label: "Gemini", provider: "dataforseo", segment: "gemini", model: "gemini-3.5-flash", webSearch: true },
+  { key: "perplexity", label: "Perplexity", provider: "dataforseo", segment: "perplexity", model: "sonar", webSearch: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -65,7 +79,15 @@ export type GeoQuery = {
   text: string; // brand/market injected
   category: string;
   contextInjection: string | null;
+  /** True when the template referenced {brand}/{brand_name}: the query is
+   *  brand-specific (reputation) and CANNOT be shared across a market cache. */
+  brandSpecific: boolean;
 };
+
+/** A template is brand-specific if it names the brand placeholder anywhere. */
+function isBrandSpecific(...templates: (string | null | undefined)[]): boolean {
+  return templates.some((t) => typeof t === "string" && /\{brand(_name)?\}/.test(t));
+}
 
 /**
  * Fill {brand_name} / {market} placeholders (schema-amendments C.11 convention).
@@ -117,6 +139,7 @@ export async function loadQueries(
     contextInjection: row.context_injection
       ? injectPlaceholders(row.context_injection, brandName, market)
       : null,
+    brandSpecific: isBrandSpecific(row.query_text, row.context_injection),
   }));
 }
 
@@ -150,52 +173,94 @@ function extractAnswerText(item: unknown): string {
   return parts.join("\n").trim();
 }
 
-const ENGINE_CONCURRENCY = 3; // parallel live calls per engine (bounded)
-const PER_CALL_MS = 45_000; // abandon a single live call after 45s (rare; bounds isolate time)
+export const ENGINE_CONCURRENCY = 3; // parallel calls per engine (bounded)
+const PER_CALL_MS = 45_000; // abandon a single call after 45s (rare; bounds isolate time)
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("engine call timeout")), ms)),
+  ]);
+}
+
+/** Optional logging context so direct-provider LLM calls hit agent_job_logs. */
+export type EngineLogCtx = { sb: SupabaseClient; scanJobId: string; brandId: string };
 
 /**
- * Dispatch one engine over the query set via the SYNCHRONOUS /live endpoint.
- * Queries run with bounded concurrency; each call carries model_name + web_search
- * where the engine requires them. Any per-query failure is swallowed to a partial
- * result — a single query/engine never throws out of the module. Context (if any)
- * is folded into the prompt (llm_responses/live accepts user_prompt, not a system
- * field), so we never risk a 40501 on an unsupported parameter.
+ * Run ONE prompt against ONE engine and return the answer text ("" on any
+ * failure). Provider-routed (GEO v2):
+ *   - openai/anthropic → direct web-search call, logged to agent_job_logs so its
+ *     token cost is captured (DataForSEO spend is metered separately by dfsPost).
+ *   - dataforseo       → ai_optimization/<segment>/llm_responses/live.
+ * All engine text is UNTRUSTED and only ever handed to the classifier via
+ * asUntrustedData downstream — never interpreted as instructions here.
  */
-export async function runEngine(
+export async function runSingleQuery(
   platform: PlatformDef,
-  queries: GeoQuery[],
-  _opts: { maxWaitMs: number },
-): Promise<EngineResponse[]> {
-  const url = `ai_optimization/${platform.segment}/llm_responses/live`;
-  const out: EngineResponse[] = [];
-  let idx = 0;
-
-  async function callOne(q: GeoQuery): Promise<void> {
-    const prompt = q.contextInjection ? `${q.contextInjection}\n\n${q.text}` : q.text;
-    const task: Record<string, unknown> = { user_prompt: prompt };
-    if (platform.model) task.model_name = platform.model;
-    if (platform.webSearch) task.web_search = true;
-    try {
-      const body = await Promise.race([
+  prompt: string,
+  log?: EngineLogCtx,
+): Promise<string> {
+  try {
+    if (platform.provider === "dataforseo") {
+      const url = `ai_optimization/${platform.segment}/llm_responses/live`;
+      const task: Record<string, unknown> = { user_prompt: prompt };
+      if (platform.model) task.model_name = platform.model;
+      if (platform.webSearch) task.web_search = true;
+      const body = await withTimeout(
         dfsPost<{ tasks?: Array<{ result?: Record<string, unknown>[] }> }>(url, [task]),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("live call timeout")), PER_CALL_MS)),
-      ]);
-      const res = firstResult<Record<string, unknown>>(body)[0] ?? {};
-      out.push({ query: q.text, category: q.category, text: extractAnswerText(res) });
-    } catch (_e) {
-      // skip this query for this engine; partial coverage is acceptable
+        PER_CALL_MS,
+      );
+      return extractAnswerText(firstResult<Record<string, unknown>>(body)[0] ?? {});
     }
-  }
 
+    const call = () =>
+      platform.provider === "openai"
+        ? callOpenAIWebSearch({ prompt })
+        : callClaudeWebSearch({ prompt });
+
+    const result = log
+      ? await loggedLlm(
+          log.sb,
+          {
+            scan_job_id: log.scanJobId,
+            brand_id: log.brandId,
+            agent_name: "researcher",
+            task_type: "geo_aeo",
+            prompt_version: `geo_engine_${platform.key}_v2`,
+            input_snapshot: { engine: platform.key, prompt },
+          },
+          () => withTimeout(call(), PER_CALL_MS),
+        )
+      : await withTimeout(call(), PER_CALL_MS);
+    return result.text;
+  } catch (_e) {
+    // a single engine/query failing never throws out of the module (partial ok)
+    return "";
+  }
+}
+
+/**
+ * Run many prompts against one engine with bounded concurrency, returning a
+ * map { prompt → answerText }. Used both directly (brand queries) and as the
+ * market-cache miss-fetcher (shared market queries).
+ */
+export async function runQueriesConcurrent(
+  platform: PlatformDef,
+  prompts: string[],
+  log?: EngineLogCtx,
+  concurrency = ENGINE_CONCURRENCY,
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  let idx = 0;
   async function worker(): Promise<void> {
-    while (idx < queries.length) {
-      const q = queries[idx++];
-      await callOne(q);
+    while (idx < prompts.length) {
+      const p = prompts[idx++];
+      out[p] = await runSingleQuery(platform, p, log);
     }
   }
-
-  const workers = Array.from({ length: Math.min(ENGINE_CONCURRENCY, queries.length) }, () => worker());
-  await Promise.all(workers);
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, prompts.length) }, () => worker()),
+  );
   return out;
 }
 
