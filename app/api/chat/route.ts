@@ -3,24 +3,20 @@ import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentBrand } from "@/lib/data/brand";
-import { openAiChat, hasOpenAiKey, OPENAI_CHAT_MODEL, type ChatMessage } from "@/lib/server/llm";
+import { hasOpenAiKey, OPENAI_CHAT_MODEL } from "@/lib/server/llm";
 import { resolveModel } from "@/lib/server/model-router";
+import { runBrandChatTurn, type BrandChatMessage } from "@/lib/brand-agent/engine";
+import type { BrandToolContext } from "@/lib/brand-agent/tools";
 
 /**
- * POST /api/chat — answer a brand-chat message with GPT-4.1 Mini, grounded in the
- * brand's own data.
+ * POST /api/chat — brand-facing chat, grounded in the brand's OWN scan data.
  *
- * Flow (docs/skills/data-flow-rules.md §5, mvp-module-sources "Chat"):
- *  1. Auth + resolve the caller's brand.
- *  2. Build brand context SERVER-SIDE: profile + latest weekly_cache summary +
- *     recent open recommendations (RLS reads). Inject as a system prompt.
- *  3. Persist the user message (creating the conversation if null) via RLS client.
- *  4. Call GPT-4.1 Mini with context + recent history; persist the assistant reply.
- *  5. Advance the conversation's last_message_at / message_count.
- *
- * Supersedes the honest-stub assistant reply in app/(app)/chat/actions.ts. The
- * underlying message-persistence shape matches that action. Server-only; OpenAI key
- * via process.env. Missing key → honest "chat not configured" error (no fabrication).
+ * Runs on the SAME OpenAI Responses API + server-side tool loop as the HQ Agent
+ * (lib/brand-agent/engine.ts), with a brand-scoped, RLS-safe tool registry
+ * (lib/brand-agent/tools.ts). This replaced the legacy Chat Completions path,
+ * which had no tools (so it couldn't answer data questions) and was failing on the
+ * `/v1/chat/completions` endpoint. Server-only; the OpenAI key never reaches the
+ * client. Tools read via the caller's RLS-scoped client → strict brand isolation.
  */
 
 export const dynamic = "force-dynamic";
@@ -56,10 +52,7 @@ export async function POST(req: Request) {
 
   // Guard BEFORE writing anything so we never persist a user message we can't answer.
   if (!hasOpenAiKey()) {
-    return NextResponse.json(
-      { ok: false, error: "Chat is not configured." },
-      { status: 503 },
-    );
+    return NextResponse.json({ ok: false, error: "Chat is not configured." }, { status: 503 });
   }
 
   const brand = await getCurrentBrand();
@@ -93,7 +86,6 @@ export async function POST(req: Request) {
     }
     targetConversationId = conversation.id;
   } else {
-    // Confirm the conversation is visible under RLS (belongs to the brand).
     const { data: conv } = await supabase
       .from("chat_conversations")
       .select("id, message_count")
@@ -105,6 +97,10 @@ export async function POST(req: Request) {
     priorCount = conv.message_count ?? 0;
   }
 
+  if (!targetConversationId) {
+    return NextResponse.json({ ok: false, error: "Could not resolve the conversation." }, { status: 500 });
+  }
+
   // --- Load recent history BEFORE inserting the new user message --------------
   const { data: historyRows } = await supabase
     .from("chat_messages")
@@ -113,10 +109,10 @@ export async function POST(req: Request) {
     .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);
 
-  const history: ChatMessage[] = (historyRows ?? [])
+  const history: BrandChatMessage[] = (historyRows ?? [])
     .slice()
     .reverse()
-    .map((m) => ({
+    .map((m: { role: string; content: string }) => ({
       role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
       content: m.content,
     }));
@@ -131,42 +127,47 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: userMsgError.message }, { status: 500 });
   }
 
-  // --- Build brand context server-side ----------------------------------------
-  const systemPrompt = await buildSystemPrompt(supabase, brand);
-
-  // Runtime model router (model_router_config is service-role-only → admin client).
+  // --- Run the brand agent (Responses API + brand-scoped tools) ---------------
   const model = await resolveModel(createAdminClient(), "chat", OPENAI_CHAT_MODEL);
+  const toolCtx: BrandToolContext = {
+    supabase, // RLS-scoped → brand isolation enforced at the DB
+    brandId: brand.id,
+    brandName: brand.name,
+    markets: brand.market,
+  };
 
-  const completion = await openAiChat({
-    system: systemPrompt,
-    messages: [...history, { role: "user", content: message }],
-    maxTokens: 1024,
+  const turn = await runBrandChatTurn({
     model,
+    instructions: buildInstructions(brand),
+    history,
+    message,
+    toolCtx,
+    maxOutputTokens: 1024,
+    signal: req.signal,
   });
 
-  if (!completion.ok) {
+  if (!turn.ok) {
     // User message is already stored; advance the stamp so the list re-sorts, then
-    // return an honest error. We do NOT insert a fabricated assistant row.
+    // return an honest error with the real upstream detail. No fabricated reply.
     await bumpConversation(supabase, targetConversationId, priorCount + 1);
-    const status = completion.reason === "not_configured" ? 503 : 502;
-    // Surface the upstream detail (e.g. "OpenAI returned 401.") — a bare
-    // "unavailable" hid a mis-pasted Vercel key for days.
-    const error =
-      completion.reason === "not_configured"
-        ? "Chat is not configured (OPENAI_API_KEY missing on the server)."
-        : `The assistant is unavailable: ${completion.message} Check OPENAI_API_KEY in Vercel if this persists.`;
-    return NextResponse.json({ ok: false, conversationId: targetConversationId, error }, { status });
+    return NextResponse.json(
+      {
+        ok: false,
+        conversationId: targetConversationId,
+        error: `The assistant is unavailable: ${turn.error}`,
+      },
+      { status: 502 },
+    );
   }
 
-  const assistantContent = completion.text || "I couldn't produce an answer for that. Please rephrase.";
+  const assistantContent = turn.text || "I couldn't produce an answer for that. Please rephrase.";
 
   // --- Persist the assistant reply --------------------------------------------
   const { error: assistantMsgError } = await supabase.from("chat_messages").insert({
     conversation_id: targetConversationId,
     role: "assistant",
     content: assistantContent,
-    model_used: completion.model,
-    tokens_used: completion.totalTokens,
+    model_used: turn.model,
   });
   if (assistantMsgError) {
     return NextResponse.json(
@@ -175,7 +176,6 @@ export async function POST(req: Request) {
     );
   }
 
-  // user + assistant = +2 messages.
   await bumpConversation(supabase, targetConversationId, priorCount + 2);
 
   return NextResponse.json({
@@ -198,61 +198,16 @@ async function bumpConversation(
     .eq("id", conversationId);
 }
 
-async function buildSystemPrompt(
-  supabase: SupabaseClient,
-  brand: { id: string; name: string; market: string[] },
-): Promise<string> {
-  const markets = brand.market.join(", ");
-  const parts: string[] = [
-    markets
-      ? `You are Brandscope's brand-intelligence assistant for an iGaming brand competing in ${markets}.`
-      : "You are Brandscope's brand-intelligence assistant for an iGaming brand.",
-    "Answer ONLY from the brand context below. If the data does not cover the question, say so plainly — never invent numbers, competitors, or sources.",
-    `Brand: ${brand.name}. Markets: ${brand.market.join(", ") || "unspecified"}.`,
-  ];
-
-  // Latest weekly_cache summary (RLS read).
-  const { data: cache } = await supabase
-    .from("weekly_cache")
-    .select(
-      "scan_week, threat_level, threat_score, ai_visibility_score, sov_pct, competitors_tracked, active_ads_count, promo_changes_this_week",
-    )
-    .eq("brand_id", brand.id)
-    .order("scan_week", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (cache) {
-    parts.push(
-      `Latest scan week ${cache.scan_week}: threat ${cache.threat_level ?? "n/a"} (${cache.threat_score ?? "n/a"}), ` +
-        `AI visibility ${cache.ai_visibility_score ?? "n/a"}, share-of-voice ${cache.sov_pct ?? "n/a"}%, ` +
-        `${cache.competitors_tracked ?? 0} competitors tracked, ${cache.active_ads_count ?? 0} active ads, ` +
-        `${cache.promo_changes_this_week ?? 0} promo changes this week.`,
-    );
-
-    // Recent open recommendations for that scan week.
-    const { data: recs } = await supabase
-      .from("recommendations")
-      .select("headline, urgency, trigger_reason, rank")
-      .eq("brand_id", brand.id)
-      .eq("scan_week", cache.scan_week)
-      .eq("status", "open")
-      .order("rank", { ascending: true })
-      .limit(8);
-
-    if (recs && recs.length > 0) {
-      const lines = recs
-        .map((r) => `- [${r.urgency}] ${r.headline} — ${r.trigger_reason}`)
-        .join("\n");
-      parts.push(`Open recommendations:\n${lines}`);
-    } else {
-      parts.push("No open recommendations for the latest scan week.");
-    }
-  } else {
-    parts.push("No weekly scan data is available yet for this brand.");
-  }
-
-  return parts.join("\n\n");
+/** System prompt: the tools carry the data, so this stays short and strict. */
+function buildInstructions(brand: { name: string; market: string[] }): string {
+  const markets = brand.market.join(", ") || "unspecified markets";
+  return [
+    `You are Brandscope's brand-intelligence assistant for ${brand.name}, an iGaming brand competing in ${markets}.`,
+    "Answer questions about this brand's competitive position using the provided tools to read its latest scan data.",
+    "Rules: call a tool to get real figures — never invent metrics, competitors, sources, or a scan week.",
+    "If a tool reports no data (available:false), say so plainly and, when useful, note that a scan may still be running or the module returned nothing for this market. Do not fabricate.",
+    "Cite the scan week when you give figures. Be concise and specific; lead with the answer.",
+  ].join(" ");
 }
 
 function deriveTitle(text: string): string {
