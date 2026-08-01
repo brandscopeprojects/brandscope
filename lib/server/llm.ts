@@ -19,7 +19,6 @@ export const OPENAI_MODERATION_MODEL = "omni-moderation-latest";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_MODERATION_URL = "https://api.openai.com/v1/moderations";
 
 export type LlmFailure =
@@ -30,10 +29,6 @@ export type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export type AnthropicResult =
   | { ok: true; text: string; model: string; inputTokens: number; outputTokens: number }
-  | LlmFailure;
-
-export type OpenAiChatResult =
-  | { ok: true; text: string; model: string; totalTokens: number }
   | LlmFailure;
 
 export type ModerationResult =
@@ -105,56 +100,9 @@ export async function anthropicComplete(args: {
   };
 }
 
-/** Call OpenAI GPT-4.1 Mini (or a router-resolved override) via the Chat Completions API. */
-export async function openAiChat(args: {
-  system: string;
-  messages: ChatMessage[];
-  maxTokens?: number;
-  model?: string;
-}): Promise<OpenAiChatResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return { ok: false, reason: "not_configured", message: "OpenAI API key is not configured." };
-  }
-  const model = args.model ?? OPENAI_CHAT_MODEL;
-
-  let res: Response;
-  try {
-    res = await fetch(OPENAI_CHAT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: args.maxTokens ?? 1024,
-        messages: [
-          { role: "system", content: args.system },
-          ...args.messages.map((m) => ({ role: m.role, content: m.content })),
-        ],
-      }),
-    });
-  } catch (err) {
-    return { ok: false, reason: "upstream_error", message: errorText(err) };
-  }
-
-  if (!res.ok) {
-    return { ok: false, reason: "upstream_error", message: `OpenAI returned ${res.status}.` };
-  }
-
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch (err) {
-    return { ok: false, reason: "upstream_error", message: errorText(err) };
-  }
-
-  const text = extractOpenAiText(body);
-  const totalTokens =
-    (body as { usage?: { total_tokens?: number } }).usage?.total_tokens ?? 0;
-  return { ok: true, text, model, totalTokens };
-}
+// NOTE: brand chat's old Chat Completions helper (openAiChat) was removed — brand
+// chat now runs on the OpenAI Responses API + tool loop (lib/brand-agent/engine.ts),
+// the same engine as the HQ Agent. Anthropic + moderation helpers are unchanged.
 
 /** OpenAI Moderation (omni-moderation-latest) on a block of text. */
 export async function moderateText(text: string): Promise<ModerationResult> {
@@ -201,14 +149,6 @@ function extractAnthropicText(body: unknown): string {
     .map((b) => b.text as string)
     .join("\n")
     .trim();
-}
-
-function extractOpenAiText(body: unknown): string {
-  const choices = (body as {
-    choices?: Array<{ message?: { content?: string } }>;
-  }).choices;
-  if (!Array.isArray(choices) || choices.length === 0) return "";
-  return (choices[0]?.message?.content ?? "").trim();
 }
 
 function errorText(err: unknown): string {
