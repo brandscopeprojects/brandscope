@@ -5,9 +5,12 @@
 // in code (RLS does not protect service-role). External provider calls (DataForSEO)
 // are server-side only — none are wired at MVP Sprint 2 (see competitor-tier seam).
 
+import { cookies } from "next/headers";
 import { requireUser } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { provisionBrand } from "@/lib/data/onboarding";
+import { provisionBrand, addBrandToOrg } from "@/lib/data/onboarding";
+import { ACTIVE_BRAND_COOKIE } from "@/lib/data/brand";
 import {
   detectBrandFromDomain,
   normaliseDomain,
@@ -98,7 +101,7 @@ export async function suggestOnboarding(
           tier: (VALID_TIERS.has(String(c?.tier)) ? c.tier : "challenger") as CompetitorTier,
         }))
         .filter((c) => c.domain.length > 0 && c.domain !== domain)
-        .slice(0, 5),
+        .slice(0, 8),
     };
     return classifyOnboardingSuggestion({ suggestions, requestId });
   } catch {
@@ -123,17 +126,6 @@ export type CompleteOnboardingInput = {
 export type CompleteOnboardingResult =
   | { ok: true; brandId: string }
   | { ok: false; error: string };
-
-/** Monday (UTC) of the week containing `date`, as a YYYY-MM-DD string. */
-function mondayOfWeek(date: Date): string {
-  const d = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
-  const day = d.getUTCDay(); // 0 = Sun … 6 = Sat
-  const diff = day === 0 ? -6 : 1 - day; // shift back to Monday
-  d.setUTCDate(d.getUTCDate() + diff);
-  return d.toISOString().slice(0, 10);
-}
 
 /**
  * Step 9 — create the brand + competitors and the first scan_jobs trigger row.
@@ -186,18 +178,40 @@ export async function completeOnboarding(
 
   const admin = createAdminClient();
 
-  // --- 1. provision the brand (org + membership + brand) ---
+  // --- 1. create the brand ---
+  // First brand → provision_brand (org + owner membership + brand). Additional
+  // brands (multi-brand) → attach to the user's EXISTING org instead of spawning a
+  // new one. We resolve the org from any brand the user can already see (RLS).
   let brandId: string;
   try {
-    brandId = await provisionBrand({
-      userId: user.id,
-      orgName: brandName, // org defaults to brand name at MVP (single brand/org)
-      brandName,
-      domain: brandDomain,
-      markets,
-      industry,
-      tier: "challenger", // own-brand tier; same heuristic as competitors, default at MVP
-    });
+    const rls = createClient();
+    const { data: existingBrand } = await rls
+      .from("brands")
+      .select("organisation_id")
+      .is("deleted_at", null)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingBrand?.organisation_id) {
+      brandId = await addBrandToOrg({
+        orgId: existingBrand.organisation_id,
+        brandName,
+        domain: brandDomain,
+        markets,
+        industry,
+        tier: "challenger",
+      });
+    } else {
+      brandId = await provisionBrand({
+        userId: user.id,
+        orgName: brandName, // the org name from the first brand
+        brandName,
+        domain: brandDomain,
+        markets,
+        industry,
+        tier: "challenger",
+      });
+    }
   } catch (e) {
     return {
       ok: false,
@@ -248,49 +262,10 @@ export async function completeOnboarding(
     }
   }
 
-  // --- 3. create the first scan_jobs trigger row and start the first scan ---
-  // The row is the durable trigger record (Monday's weekly-scan-trigger skips
-  // brands that already have a job for the current scan_week). The direct invoke
-  // below starts the pipeline NOW so the scanning screen's "2-3 minutes" promise
-  // holds — without it the row would sit pending forever (weekly cron only creates
-  // jobs for NEW scan weeks, so it would never pick this one up).
-  const { data: scanJob, error: scanErr } = await admin
-    .from("scan_jobs")
-    .insert({
-      brand_id: brandId,
-      status: "pending",
-      triggered_by: "cron",
-      scan_week: mondayOfWeek(new Date()),
-      progress_percentage: 0,
-    })
-    .select("id")
-    .single();
-  if (scanErr || !scanJob) {
-    return {
-      ok: false,
-      error: `Failed to queue first scan: ${scanErr?.message ?? "no row returned"}`,
-    };
-  }
-
-  // Kick brand-scan (Supervisor decompose). Best-effort: onboarding still succeeds
-  // if this fails — the job row stays pending and can be re-kicked from admin.
-  // brand-scan accepts the service-role bearer for server->function calls.
-  try {
-    await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/brand-scan`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ scan_job_id: scanJob.id, brand_id: brandId }),
-      signal: AbortSignal.timeout(15_000),
-      cache: "no-store",
-    });
-  } catch {
-    // swallow — see comment above
-  }
-
-  // --- 4. mark onboarding complete ---
+  // --- 3. mark onboarding complete ---
+  // Scans are MANUAL per brand (owner cost control): the user starts each brand's
+  // first scan from Portfolio Home / the dashboard "Scan now" action. We do NOT
+  // auto-kick a scan here.
   const { error: completeErr } = await admin
     .from("brands")
     .update({ onboarding_completed_at: new Date().toISOString() })
@@ -298,6 +273,14 @@ export async function completeOnboarding(
   if (completeErr) {
     return { ok: false, error: `Failed to finalise onboarding: ${completeErr.message}` };
   }
+
+  // Make the newly-added brand the active one so the switcher + dashboard land on it.
+  cookies().set(ACTIVE_BRAND_COOKIE, brandId, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  });
 
   return { ok: true, brandId };
 }

@@ -10,15 +10,17 @@ import { Menu, X } from "lucide-react";
 import { NavSidebar } from "@/components/shell/NavSidebar";
 import { BottomNav } from "@/components/shell/BottomNav";
 import { ChatFab } from "@/components/shell/ChatFab";
-import { marketLabel } from "@/lib/format";
+import { BrandSwitcher } from "@/components/shell/BrandSwitcher";
+
+type Brand = { id: string; name: string; market: string[]; slug: string };
 
 export function AppShell({
-  brandName,
-  markets,
+  brands,
+  activeBrandId,
   children,
 }: {
-  brandName: string;
-  markets: string[];
+  brands: Brand[];
+  activeBrandId: string;
   children: React.ReactNode;
 }) {
   const [navOpen, setNavOpen] = useState(false);
@@ -48,14 +50,7 @@ export function AppShell({
             >
               {navOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
-            <div className="flex items-baseline gap-2">
-              <span className="font-display text-sm font-bold text-ink">{brandName}</span>
-              {markets.length > 0 && (
-                <span className="text-xs text-ink-secondary">
-                  · {markets.map(marketLabel).join(", ")}
-                </span>
-              )}
-            </div>
+            <BrandSwitcher brands={brands} activeBrandId={activeBrandId} />
           </div>
 
           <form action="/auth/signout" method="post">

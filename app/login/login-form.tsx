@@ -28,7 +28,7 @@ export function LoginForm() {
       return;
     }
     // Land in-app; the (app) layout routes to /onboarding when no brand exists yet.
-    const next = params.get("next") || "/dashboard";
+    const next = params.get("next") || "/portfolio";
     router.replace(next);
     router.refresh();
   }

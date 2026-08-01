@@ -419,7 +419,7 @@ export function OnboardingWizard({ initialDomain = "" }: { initialDomain?: strin
         setError(res.error);
         return;
       }
-      router.replace("/onboarding/scanning");
+      router.replace("/portfolio");
     });
   }
 

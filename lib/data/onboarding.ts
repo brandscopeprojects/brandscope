@@ -35,3 +35,46 @@ export async function provisionBrand(input: ProvisionBrandInput): Promise<string
   }
   return data as string;
 }
+
+export type AddBrandInput = {
+  orgId: string;
+  brandName: string;
+  domain: string;
+  markets: string[];
+  industry?: string;
+  tier?: string;
+};
+
+/**
+ * Add an ADDITIONAL brand to an EXISTING organisation (multi-brand: the user's
+ * first brand provisions the org via provision_brand; subsequent brands attach
+ * here rather than spawning a new org). The brand insert fires handle_new_brand()
+ * which seeds brand_preferences + alert_configs, same as provision_brand. Returns
+ * the new brand id. Service-role only.
+ */
+export async function addBrandToOrg(input: AddBrandInput): Promise<string> {
+  const admin = createAdminClient();
+  const base = input.brandName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "brand";
+  const slug = `${base}-${crypto.randomUUID().slice(0, 6)}`;
+  const { data, error } = await admin
+    .from("brands")
+    .insert({
+      organisation_id: input.orgId,
+      name: input.brandName,
+      domain: input.domain,
+      slug,
+      market: input.markets,
+      industry: input.industry ?? "igaming",
+      tier: input.tier ?? "challenger",
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
+    throw new Error(`add brand failed: ${error?.message ?? "no row returned"}`);
+  }
+  return data.id as string;
+}

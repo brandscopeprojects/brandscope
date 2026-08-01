@@ -6,17 +6,17 @@
 
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { getCurrentBrand } from "@/lib/data/brand";
+import { getCurrentBrand, listOrgBrands } from "@/lib/data/brand";
 import { AppShell } from "@/components/shell/AppShell";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   await requireUser();
 
-  const brand = await getCurrentBrand();
+  const [brand, brands] = await Promise.all([getCurrentBrand(), listOrgBrands()]);
   if (!brand) redirect("/onboarding");
 
   return (
-    <AppShell brandName={brand.name} markets={brand.market}>
+    <AppShell brands={brands} activeBrandId={brand.id}>
       {children}
     </AppShell>
   );
