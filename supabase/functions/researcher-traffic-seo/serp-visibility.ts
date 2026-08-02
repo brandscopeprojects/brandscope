@@ -195,6 +195,15 @@ export function deriveCompetitorVisibility(
     [brandName, `${brandName} login`, `${brandName} app`, `${brandName} bonus`]
       .map((t) => t.toLowerCase().trim()),
   );
+  // Navigational/brand terms — the brand's own defense terms AND every tracked
+  // competitor's brand name (the conquest bucket). A rival ranking #1 for its OWN
+  // name is conquest signal, NOT an actionable content gap, and its huge brand-
+  // search volume would otherwise bury the real money-term gaps. Excluded from gaps.
+  const navTerms = new Set(brandTerms);
+  for (const cc of competitors) {
+    const n = (cc.name || "").toLowerCase().trim();
+    if (n) navTerms.add(n);
+  }
 
   // brand rank per keyword (for gap detection: gap = competitor ranks, brand does not).
   const brandRankByKw = new Map<string, number | null>();
@@ -237,9 +246,10 @@ export function deriveCompetitorVisibility(
         paidHits += 1;
         score += 1; // spending on this term is real acquisition signal
       }
-      // Gap: this competitor ranks top-10 on a NON-defense term and the brand does not.
-      const isDefense = brandTerms.has(kw.toLowerCase());
-      if (!isDefense && bestOrganic != null && bestOrganic <= 10 && brandRankByKw.get(kw) == null) {
+      // Gap: this competitor ranks top-10 on a MONEY/DISCOVERY term (not a brand
+      // name) and the brand does not rank at all → an actionable content gap.
+      const isNavTerm = navTerms.has(kw.toLowerCase());
+      if (!isNavTerm && bestOrganic != null && bestOrganic <= 10 && brandRankByKw.get(kw) == null) {
         gaps.push({
           keyword: kw,
           volume: volumes.get(kw.toLowerCase()) ?? null,

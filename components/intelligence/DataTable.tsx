@@ -16,6 +16,9 @@ export type Column<T> = {
   /** Allow this column's cells to wrap (default: no-wrap so the table scrolls
    *  horizontally on mobile instead of collapsing columns). Use for long prose. */
   wrap?: boolean;
+  /** Short plain-language definition — shown as a hover tooltip on the header,
+   *  with a dotted underline cue. Pair with an on-page legend for mobile. */
+  hint?: string;
 };
 
 export function DataTable<T>({
@@ -43,9 +46,18 @@ export function DataTable<T>({
             {columns.map((c) => (
               <th
                 key={c.key}
-                className={`whitespace-nowrap px-4 py-2.5 text-xs font-medium text-ink-secondary ${alignClass(c.align)}`}
+                title={c.hint}
+                className={`whitespace-nowrap px-4 py-2.5 text-xs font-medium text-ink-secondary ${alignClass(c.align)} ${c.hint ? "cursor-help" : ""}`}
               >
-                {c.header}
+                <span
+                  className={
+                    c.hint
+                      ? "underline decoration-dotted decoration-ink-faint/60 underline-offset-2"
+                      : ""
+                  }
+                >
+                  {c.header}
+                </span>
               </th>
             ))}
           </tr>

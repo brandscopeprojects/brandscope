@@ -40,6 +40,7 @@ const COMPETITOR_COLUMNS: Column<CompetitorSeo>[] = [
   {
     key: "domainAuthority",
     header: "Search Visibility",
+    hint: "0–100, relative to the strongest rival. 100 = most visible on Google here; 0 = didn't appear in any tracked search.",
     align: "right",
     mono: true,
     cell: (c) => (c.domainAuthority == null ? "—" : `${c.domainAuthority}/100`),
@@ -47,6 +48,7 @@ const COMPETITOR_COLUMNS: Column<CompetitorSeo>[] = [
   {
     key: "organicPct",
     header: "Organic",
+    hint: "Share of that visibility coming from free/earned Google listings (not ads).",
     align: "right",
     mono: true,
     cell: (c) => (c.organicPct == null ? "—" : `${c.organicPct}%`),
@@ -54,11 +56,27 @@ const COMPETITOR_COLUMNS: Column<CompetitorSeo>[] = [
   {
     key: "paidPct",
     header: "Paid",
+    hint: "Share of that visibility coming from paid Google Ads. 0% = they're not buying ads here.",
     align: "right",
     mono: true,
     cell: (c) => (c.paidPct == null ? "—" : `${c.paidPct}%`),
   },
 ];
+
+/** Always-visible "how to read this" legend (works on mobile, unlike header
+ *  hover-hints). Compact definition list in the muted secondary zone. */
+function Legend({ items }: { items: { term: string; def: string }[] }) {
+  return (
+    <dl className="flex flex-wrap gap-x-6 gap-y-1.5 rounded-chip border border-divider bg-base-secondary/60 px-4 py-3 text-xs leading-relaxed text-ink-secondary">
+      {items.map((it) => (
+        <div key={it.term} className="flex gap-1.5">
+          <dt className="shrink-0 font-medium text-ink">{it.term}</dt>
+          <dd>{it.def}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 function SectionCard({
   title,
@@ -153,6 +171,15 @@ export default async function TrafficSeoPage() {
             getRowKey={(c) => c.competitorId}
             emptyLabel="No competitor SEO snapshots in this week's scan."
           />
+          <Legend
+            items={[
+              {
+                term: "Search Visibility",
+                def: "0–100 vs the strongest rival — how much of Google they own here.",
+              },
+              { term: "Organic / Paid", def: "free listings vs paid Google Ads." },
+            ]}
+          />
         </SectionCard>
 
         <SectionCard
@@ -170,6 +197,13 @@ export default async function TrafficSeoPage() {
         description="High-volume keywords your competitors rank for, across all tracked competitors."
       >
         <SeoKeywordGapTable rows={shownGaps} />
+        <Legend
+          items={[
+            { term: "Volume", def: "monthly searches for that term — bigger = more customers." },
+            { term: "Rank", def: "Google position (#1 = top; lower is better)." },
+            { term: "Not ranking", def: "you don't appear on the page for that search." },
+          ]}
+        />
         {truncated > 0 && (
           <p className="text-xs text-ink-faint">
             Showing the top {KEYWORD_GAP_CAP} of {keywordGaps.length} keyword gaps by search

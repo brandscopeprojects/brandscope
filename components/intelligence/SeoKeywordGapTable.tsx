@@ -20,6 +20,7 @@ const COLUMNS: Column<RankedKeywordGap>[] = [
   {
     key: "volume",
     header: "Volume",
+    hint: "Monthly Google searches for this term — bigger = more customers at stake.",
     align: "right",
     mono: true,
     cell: (r) => (r.volume == null ? "—" : r.volume.toLocaleString()),
@@ -27,6 +28,7 @@ const COLUMNS: Column<RankedKeywordGap>[] = [
   {
     key: "brandRank",
     header: "Your rank",
+    hint: "Where your brand ranks on Google for this term (#1 = top). 'Not ranking' = you're absent.",
     align: "right",
     mono: true,
     cell: (r) =>
@@ -39,6 +41,7 @@ const COLUMNS: Column<RankedKeywordGap>[] = [
   {
     key: "competitorRank",
     header: "Best competitor",
+    hint: "The rival ranking highest for this term, and their Google position.",
     align: "right",
     cell: (r) => (
       <span className="inline-flex items-baseline gap-1.5">
