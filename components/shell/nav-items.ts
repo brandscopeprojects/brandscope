@@ -5,6 +5,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
+  LayoutGrid,
   LayoutDashboard,
   Globe2,
   Megaphone,
@@ -40,7 +41,10 @@ export type NavGroup = {
 export const NAV_GROUPS: NavGroup[] = [
   {
     heading: null,
-    items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
+    items: [
+      { label: "Portfolio", href: "/portfolio", icon: LayoutGrid },
+      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    ],
   },
   {
     heading: "Intelligence",
