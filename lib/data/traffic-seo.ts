@@ -156,8 +156,9 @@ export async function getTrafficSeoData(
         keywordGaps,
       } satisfies CompetitorSeo;
     })
-    // Stable, useful order: biggest traffic first.
-    .sort((a, b) => (b.estimatedTraffic ?? 0) - (a.estimatedTraffic ?? 0));
+    // Stable, useful order: strongest search visibility first (SOSV in
+    // domainAuthority; estimatedTraffic is null under the live-SERP model).
+    .sort((a, b) => (b.domainAuthority ?? 0) - (a.domainAuthority ?? 0));
 
   // Union of keyword gaps across competitors, dedup'd by keyword (keep the
   // highest-volume occurrence), sorted volume-desc.

@@ -1,17 +1,17 @@
 // researcher-traffic-seo — SEO/Traffic Researcher (agent-orchestration.md step 3).
-// Consumes a `scan_modules` message (task_type 'traffic_seo'), calls DataForSEO Labs
-// per competitor (Promise.allSettled, bounded concurrency, 90s budget), structures the
-// result into the seo_cache jsonb contract (lib/data/traffic-seo.ts), UPSERTs
-// seo_cache + competitor_profiles, then (when it completes the job's module fan-out)
-// triggers synthesis. Service-role; every query scoped to msg.brand_id. DataForSEO only.
+// Consumes a `scan_modules` message (task_type 'traffic_seo') and builds each
+// competitor's SEO snapshot from a LIVE Google SERP sweep (serp/google/organic/
+// live/advanced) instead of DataForSEO Labs — Labs is blind to small country-
+// specific betting domains (betika.co.zm → all dashes). One curated, market-shared
+// keyword set (brand-defense · conquest · money terms) yields, per competitor: a
+// search-visibility score, organic/paid presence, SERP positions and real keyword
+// gaps. Each keyword's SERP is cached per (market, week, keyword) so sibling brands
+// and same-week re-scans are cache hits (~16 calls first brand, ~4 thereafter).
+// Structures into seo_cache + competitor_profiles, then (when it completes the
+// job's module fan-out) triggers synthesis. Service-role; scoped to msg.brand_id.
 //
-// Endpoints (mvp-module-sources.md §1):
-//   dataforseo_labs/google/bulk_traffic_estimation/live
-//   dataforseo_labs/google/domain_intersection/live
-//   dataforseo_labs/google/ranked_keywords/live
-//   keywords_data/google_ads/search_volume/live
-// (competitors_domain/live is reserved for brand-side overlap; not required for the
-//  per-competitor gap rows the frontend reads, which come from intersection + ranked.)
+// Reach/demand signals (brand search-volume + Google Trends) are kept — they are
+// cheap, market-cached and DO return data for these markets.
 
 import { serviceClient } from "../_shared/supabase.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
@@ -27,30 +27,28 @@ import { makeEvidence } from "../_shared/evidence.ts";
 import type { ContentGap, KeywordGap, SerpPosition } from "./types.ts";
 import {
   locationCode,
-  fetchTrafficEstimate,
-  fetchKeywordIntersection,
-  fetchRankedKeywords,
   fetchSearchVolumes,
   fetchBrandDemandBatch,
   fetchBrandTrends,
-  fetchSiteKeywordCount,
-  mergeKeywordGaps,
   trafficSplitPct,
 } from "./dataforseo-seo.ts";
+import {
+  buildSweepKeywords,
+  runSerpSweep,
+  deriveCompetitorVisibility,
+} from "./serp-visibility.ts";
 import { languageCode } from "../_shared/dataforseo.ts";
 import { getOrFetchMarketIntel, getOrFetchMarketIntelKeyed } from "../_shared/market-cache.ts";
 
-const PROMPT_VERSION = "traffic_seo.v1";
+const PROMPT_VERSION = "traffic_seo.v2";
 
 // Slot researcher:traffic_seo — DB-active prompt_versions row overrides this code default.
 export const TRAFFIC_SYSTEM = `You cluster SEO keywords into content topics for a competitive-intelligence tool. Given keywords a competitor ranks for that the brand does NOT, group them into 3-8 content topics. Respond ONLY with a JSON array of objects {"topic": string, "keywordCount": number}. No prose.`;
-// Bound concurrency so 10 competitors × 4 DataForSEO calls stay within the 90s budget.
-const MAX_CONCURRENCY = 4;
 
 // ── per-competitor structured result ─────────────────────────────────────────
 type CompetitorSeoResult = {
   competitor: CompetitorRef;
-  domainAuthority: number | null;
+  domainAuthority: number | null; // repurposed → "Search Visibility" (SOSV 0–100)
   estimatedTraffic: number | null;
   organicTraffic: number | null;
   paidTraffic: number | null;
@@ -77,20 +75,16 @@ Deno.serve(withMeter(async (req) => {
     const location = locationCode(msg.markets);
     const language = languageCode(msg.markets);
     const competitors = Array.isArray(msg.competitors) ? msg.competitors : [];
-
-    // 0. Market-level demand signals — fetched once per (market, scan_week) and
-    // shared across every brand in the market (market_intel_cache; owner cadence
-    // rule: new week = fresh fetch). Only MISSING competitors trigger provider
-    // calls; repeat scans and sibling brands are cache hits.
     const market0 = (msg.markets?.[0] ?? "global").toLowerCase();
     const domainKey = (d: string) => (d || "").replace(/^www\./, "").toLowerCase();
 
+    // 0. Market-level demand signals — fetched once per (market, scan_week) and
+    // shared across every brand in the market (market_intel_cache). These DO
+    // return data for small markets (Google Ads search volume), so they stay.
     const demandByDomain = await getOrFetchMarketIntelKeyed<number | null>(
       sb, market0, "brand_demand",
       competitors.map((c) => domainKey(c.domain)),
       async (missing) => {
-        // ONE batched search_volume/live call for every missing competitor
-        // (up to 1000 keywords/call) instead of one call per competitor.
         const missingSet = new Set(missing);
         const seen = new Set<string>();
         const entities: Array<{ key: string; name: string; domain: string }> = [];
@@ -108,20 +102,6 @@ Deno.serve(withMeter(async (req) => {
       },
     );
 
-    const kwCountByDomain = await getOrFetchMarketIntelKeyed<number | null>(
-      sb, market0, "site_kw_count",
-      competitors.map((c) => domainKey(c.domain)),
-      async (missing) => {
-        const out: Record<string, number | null> = {};
-        for (const c of competitors) {
-          const key = domainKey(c.domain);
-          if (!missing.includes(key) || key in out) continue;
-          out[key] = await fetchSiteKeywordCount(c.domain, location, language).catch(() => null);
-        }
-        return out;
-      },
-    );
-
     // Google Trends (owner-approved): ONE comparison call for up to 5 tracked
     // names, cached per market/week. Scores are a relative interest index.
     const { value: trendsByName } = await getOrFetchMarketIntel<Record<string, number>>(
@@ -132,72 +112,114 @@ Deno.serve(withMeter(async (req) => {
       },
     ).catch(() => ({ value: {} as Record<string, number>, fromCache: false }));
 
-    // 1. Fetch + structure per competitor (Promise.allSettled, bounded concurrency).
-    const settled = await mapWithConcurrency(
-      competitors,
-      MAX_CONCURRENCY,
-      (c) => fetchCompetitorSeo(sb, msg, c, location, msg.brand_domain, language, {
-        brandDemandVolume: demandByDomain[domainKey(c.domain)] ?? null,
-        organicKeywordCount: kwCountByDomain[domainKey(c.domain)] ?? null,
-        brandTrendsScore: trendsByName[c.name.trim().toLowerCase()] ?? null,
-      }),
+    // 1. LIVE-SERP visibility sweep (Route A). One curated keyword set for the whole
+    // market; each keyword's SERP cached per (market, week, keyword).
+    const sweepKeywords = buildSweepKeywords(msg.brand_name, market0, competitors);
+    const sweep = await runSerpSweep(sb, market0, sweepKeywords, location, language);
+
+    // Search-volume backfill for the swept keywords (one batched Google Ads call,
+    // cached per market/week) — ranks keyword gaps by real demand.
+    const volumeByKw = await getOrFetchMarketIntelKeyed<number | null>(
+      sb, market0, "sweep_kw_vol", sweepKeywords,
+      async (missing) => {
+        const vols = await fetchSearchVolumes(missing, location, language).catch(
+          () => new Map<string, number>(),
+        );
+        const out: Record<string, number | null> = {};
+        for (const k of missing) out[k] = vols.get(k.toLowerCase()) ?? null;
+        return out;
+      },
+    );
+    const volumes = new Map<string, number>();
+    for (const [k, v] of Object.entries(volumeByKw)) if (v != null) volumes.set(k.toLowerCase(), v);
+
+    // 2. Derive per-competitor visibility / positions / gaps from the shared sweep
+    // (pure — no extra provider calls) + a Haiku content-gap clustering.
+    const visibility = deriveCompetitorVisibility(
+      sweep, competitors, msg.brand_domain, msg.brand_name, volumes,
     );
 
-    let anyFailures = false;
     const results: CompetitorSeoResult[] = [];
-    for (const r of settled) {
-      if (r.status === "fulfilled") results.push(r.value);
-      else anyFailures = true; // a single competitor failing → partial, never aborts others
+    for (const vis of visibility) {
+      const c = vis.competitor;
+      const contentGaps = await deriveContentGaps(sb, msg, c, vis.keywordGaps);
+      const { organicPct, paidPct } = trafficSplitPct(vis.organicHits, vis.paidHits);
+      const signals = [
+        vis.visibilityScore != null,
+        vis.keywordGaps.length > 0,
+        vis.serpPositions.length > 0,
+      ];
+      const dataQualityScore =
+        Math.round((signals.filter(Boolean).length / signals.length) * 100) / 100;
+
+      const evidence: unknown[] = [];
+      if (vis.visibilityScore != null || vis.keywordGaps.length > 0) {
+        evidence.push(
+          await makeEvidence({
+            sourceUrl: `https://${c.domain}`,
+            extractedText:
+              `Live Google SERP (location ${location}): visibility ${vis.visibilityScore ?? "n/a"}/100, ` +
+              `${vis.organicHits} organic + ${vis.paidHits} paid keyword hits, ` +
+              `${vis.keywordGaps.length} keyword gaps, ${vis.serpPositions.length} ranked positions.`,
+          }),
+        );
+      }
+
+      results.push({
+        competitor: c,
+        domainAuthority: vis.visibilityScore,
+        estimatedTraffic: null, // SERP visibility is not visit volume — honest null
+        organicTraffic: vis.organicHits,
+        paidTraffic: vis.paidHits,
+        organicPct,
+        paidPct,
+        keywordGaps: vis.keywordGaps,
+        serpPositions: vis.serpPositions,
+        contentGaps,
+        dataQualityScore,
+        rawData: {
+          source: "serp_visibility",
+          location_code: location,
+          language_code: language,
+          brand_domain: msg.brand_domain,
+          visibility_score: vis.visibilityScore,
+          organic_hits: vis.organicHits,
+          paid_hits: vis.paidHits,
+          keywords_swept: sweep.keywords.length,
+          sweep_had_data: sweep.hadData,
+          brand_demand_volume: demandByDomain[domainKey(c.domain)] ?? null,
+          brand_trends_score: trendsByName[c.name.trim().toLowerCase()] ?? null,
+          fetched_at: new Date().toISOString(),
+        },
+        evidence,
+      });
     }
 
-    // 2. UPSERT seo_cache (per competitor) + competitor_profiles (per competitor).
+    // 3. UPSERT seo_cache (per competitor) + competitor_profiles (per competitor).
     for (const res of results) {
       await upsertSeoCache(sb, msg, res);
       await upsertCompetitorProfile(sb, msg, res);
     }
 
-    // A module with zero usable results (e.g. brand has competitors but every fetch
-    // failed) is 'failed'; some-failed is 'partial'; all-ok is 'ok'. Zero competitors
-    // configured is a clean 'ok' (nothing to scan).
-    const outcome: "ok" | "failed" | "partial" =
-      competitors.length > 0 && results.length === 0
-        ? "failed"
-        : anyFailures
-        ? "partial"
-        : "ok";
+    // The sweep runs once; a competitor simply not appearing is real "invisible"
+    // data, not a failure. Only a market that returned NO SERP results at all is
+    // degraded (honest partial). Zero competitors configured is a clean 'ok'.
+    const noData = competitors.length > 0 && !sweep.hadData;
+    const outcome: "ok" | "failed" | "partial" = noData ? "partial" : "ok";
 
-    if (outcome === "failed") {
-      await recordFeatureHealth(sb, {
-        scan_job_id: msg.scan_job_id,
-        brand_id: msg.brand_id,
-        scan_week: msg.scan_week,
-        feature_category: "traffic_seo",
-        feature_name: "Traffic & SEO",
-        status: "down",
-        root_cause: "All competitor SEO fetches failed",
-      });
-    } else if (outcome === "partial") {
-      await recordFeatureHealth(sb, {
-        scan_job_id: msg.scan_job_id,
-        brand_id: msg.brand_id,
-        scan_week: msg.scan_week,
-        feature_category: "traffic_seo",
-        feature_name: "Traffic & SEO",
-        status: "degraded",
-        root_cause: "Some competitor SEO fetches failed",
-      });
-    } else {
-      await recordFeatureHealth(sb, {
-        scan_job_id: msg.scan_job_id,
-        brand_id: msg.brand_id,
-        scan_week: msg.scan_week,
-        feature_category: "traffic_seo",
-        feature_name: "Traffic & SEO",
-        status: "healthy",
-      });
-    }
+    await recordFeatureHealth(sb, {
+      scan_job_id: msg.scan_job_id,
+      brand_id: msg.brand_id,
+      scan_week: msg.scan_week,
+      feature_category: "traffic_seo",
+      feature_name: "Traffic & SEO",
+      status: noData ? "degraded" : "healthy",
+      ...(noData
+        ? { root_cause: "Live Google SERP returned no results for this market/keywords this week" }
+        : {}),
+    });
 
-    // 3. Record module completion; if this call finished the fan-out → synthesis.
+    // 4. Record module completion; if this call finished the fan-out → synthesis.
     const done = await completeModule(sb, msg.scan_job_id, "traffic_seo", outcome);
     if (done) {
       await enqueueSynthesis(sb, {
@@ -243,118 +265,7 @@ Deno.serve(withMeter(async (req) => {
   }
 }));
 
-// ── per-competitor fetch + structure ─────────────────────────────────────────
-async function fetchCompetitorSeo(
-  sb: SupabaseClient,
-  msg: ScanModuleMessage,
-  competitor: CompetitorRef,
-  location: number,
-  brandDomain: string,
-  language: string,
-  demandSignals: {
-    brandDemandVolume: number | null;
-    organicKeywordCount: number | null;
-    brandTrendsScore: number | null;
-  },
-): Promise<CompetitorSeoResult> {
-  const domain = competitor.domain;
-
-  // Each DataForSEO call is independent → allSettled so a missing dataset doesn't
-  // wipe the others. Tolerate per-call failure with null/[] (no fabrication).
-  // Demand/trends/keyword-count come precomputed from the shared market cache.
-  const [estR, interR, rankedR] = await Promise.allSettled([
-    fetchTrafficEstimate(domain, location, language),
-    fetchKeywordIntersection(domain, brandDomain, location, language),
-    fetchRankedKeywords(domain, location, language),
-  ]);
-  const { brandDemandVolume, organicKeywordCount, brandTrendsScore } = demandSignals;
-
-  const traffic = estR.status === "fulfilled"
-    ? estR.value
-    : { estimatedTraffic: null, organicTraffic: null, paidTraffic: null };
-  const intersectionGaps: KeywordGap[] = interR.status === "fulfilled" ? interR.value : [];
-  const ranked = rankedR.status === "fulfilled"
-    ? rankedR.value
-    : { serpPositions: [] as SerpPosition[], gaps: [] as KeywordGap[] };
-
-  // Backfill missing search volumes for the top gap keywords (one batched call).
-  const needVolume = [...intersectionGaps, ...ranked.gaps]
-    .filter((g) => g.volume == null)
-    .map((g) => g.keyword)
-    .slice(0, 700);
-  let volumes = new Map<string, number>();
-  if (needVolume.length > 0) {
-    try {
-      volumes = await fetchSearchVolumes(needVolume, location, language);
-    } catch {
-      volumes = new Map(); // tolerate; gaps keep null volume
-    }
-  }
-
-  const keywordGaps = mergeKeywordGaps(ranked.gaps, intersectionGaps, volumes, 100);
-  const serpPositions = ranked.serpPositions.slice(0, 100);
-
-  const { organicPct, paidPct } = trafficSplitPct(traffic.organicTraffic, traffic.paidTraffic);
-
-  // data_quality_score: fraction of the expected datasets that returned usable data.
-  const signals = [
-    traffic.estimatedTraffic != null,
-    keywordGaps.length > 0,
-    serpPositions.length > 0,
-  ];
-  const dataQualityScore =
-    Math.round((signals.filter(Boolean).length / signals.length) * 100) / 100;
-
-  // 4. Minimal Haiku: derive content_gaps (topic clusters) from the competitor's
-  // ranked keywords — the ONLY part not already structured by DataForSEO. Skipped
-  // when there's nothing to cluster (don't over-call the LLM). content_gaps are a
-  // derived view (no source URL) → not attached to evidence.
-  const contentGaps = await deriveContentGaps(sb, msg, competitor, keywordGaps);
-
-  // Evidence: SEO claims are sourced from the competitor domain's DataForSEO profile.
-  // Attach one evidence record per competitor pointing at the analysed domain.
-  const evidence: unknown[] = [];
-  if (traffic.estimatedTraffic != null || keywordGaps.length > 0) {
-    const ev = await makeEvidence({
-      sourceUrl: `https://${domain}`,
-      extractedText:
-        `DataForSEO Labs (location ${location}): est. traffic ${traffic.estimatedTraffic ?? "n/a"}, ` +
-        `${keywordGaps.length} keyword gaps, ${serpPositions.length} ranked positions.`,
-    });
-    evidence.push(ev);
-  }
-
-  return {
-    competitor,
-    domainAuthority: null, // DataForSEO Labs has no first-party "domain authority"; null, not faked
-    estimatedTraffic: traffic.estimatedTraffic,
-    organicTraffic: traffic.organicTraffic,
-    paidTraffic: traffic.paidTraffic,
-    organicPct,
-    paidPct,
-    keywordGaps,
-    serpPositions,
-    contentGaps,
-    dataQualityScore,
-    rawData: {
-      location_code: location,
-      language_code: language,
-      brand_domain: brandDomain,
-      traffic_estimate: traffic,
-      intersection_count: intersectionGaps.length,
-      ranked_count: ranked.gaps.length,
-      // Thin-market reach signals (scoring-formulas §1): navigational brand
-      // demand, relative Google Trends interest, organic keyword footprint.
-      brand_demand_volume: brandDemandVolume,
-      brand_trends_score: brandTrendsScore,
-      organic_keyword_count: organicKeywordCount,
-      fetched_at: new Date().toISOString(),
-    },
-    evidence,
-  };
-}
-
-// ── Haiku: cluster ranked keywords → content_gaps ────────────────────────────
+// ── Haiku: cluster ranked keyword gaps → content_gaps ────────────────────────
 async function deriveContentGaps(
   sb: SupabaseClient,
   msg: ScanModuleMessage,
@@ -411,7 +322,6 @@ async function deriveContentGaps(
           typeof p.keywordCount === "number" && Number.isFinite(p.keywordCount)
             ? Math.round(p.keywordCount)
             : null;
-        // brandPages 0: these are topics the brand does not cover (brandRank null set).
         return { topic, competitorPages: count, brandPages: 0 };
       })
       .filter((c): c is ContentGap => c !== null)
@@ -471,28 +381,4 @@ async function upsertCompetitorProfile(
   if (error) {
     throw new Error(`upsert competitor_profiles (${res.competitor.id}): ${error.message}`);
   }
-}
-
-// ── bounded-concurrency allSettled ───────────────────────────────────────────
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<PromiseSettledResult<R>[]> {
-  const results: PromiseSettledResult<R>[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (true) {
-      const i = next++;
-      if (i >= items.length) return;
-      try {
-        results[i] = { status: "fulfilled", value: await fn(items[i]) };
-      } catch (reason) {
-        results[i] = { status: "rejected", reason };
-      }
-    }
-  }
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
 }

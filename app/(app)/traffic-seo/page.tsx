@@ -21,7 +21,7 @@ import type { CompetitorSeo } from "@/lib/data/traffic-seo";
 export const dynamic = "force-dynamic";
 
 const SUBTITLE =
-  "Domain authority, traffic mix and keyword gaps across your tracked competitors.";
+  "Search visibility, organic-vs-paid presence and keyword gaps across your tracked competitors — from live Google results.";
 
 // Cap the keyword-gap table; surface the count rather than silently truncating.
 const KEYWORD_GAP_CAP = 25;
@@ -39,28 +39,21 @@ const COMPETITOR_COLUMNS: Column<CompetitorSeo>[] = [
   },
   {
     key: "domainAuthority",
-    header: "Domain Authority",
+    header: "Search Visibility",
     align: "right",
     mono: true,
-    cell: (c) => (c.domainAuthority == null ? "—" : `${c.domainAuthority}`),
-  },
-  {
-    key: "estimatedTraffic",
-    header: "Est. Traffic",
-    align: "right",
-    mono: true,
-    cell: (c) => (c.estimatedTraffic == null ? "—" : c.estimatedTraffic.toLocaleString()),
+    cell: (c) => (c.domainAuthority == null ? "—" : `${c.domainAuthority}/100`),
   },
   {
     key: "organicPct",
-    header: "Organic %",
+    header: "Organic",
     align: "right",
     mono: true,
     cell: (c) => (c.organicPct == null ? "—" : `${c.organicPct}%`),
   },
   {
     key: "paidPct",
-    header: "Paid %",
+    header: "Paid",
     align: "right",
     mono: true,
     cell: (c) => (c.paidPct == null ? "—" : `${c.paidPct}%`),
@@ -111,14 +104,20 @@ export default async function TrafficSeoPage() {
   const { scanWeek, competitors, keywordGaps } = data;
 
   // Headline stats — real, derivable values only.
-  const withTraffic = competitors.filter((c) => c.estimatedTraffic != null);
-  const totalTraffic = withTraffic.reduce((sum, c) => sum + (c.estimatedTraffic ?? 0), 0);
+  const withVisibility = competitors.filter((c) => c.domainAuthority != null);
+  const avgVisibility =
+    withVisibility.length > 0
+      ? Math.round(
+          withVisibility.reduce((sum, c) => sum + (c.domainAuthority ?? 0), 0) /
+            withVisibility.length,
+        )
+      : null;
   const stats: Stat[] = [
     { label: "Competitors tracked", value: competitors.length },
     { label: "Keyword gaps found", value: keywordGaps.length },
     {
-      label: "Combined est. traffic",
-      value: withTraffic.length > 0 ? totalTraffic.toLocaleString() : "—",
+      label: "Avg. search visibility",
+      value: avgVisibility == null ? "—" : `${avgVisibility}/100`,
     },
   ];
 
@@ -131,23 +130,22 @@ export default async function TrafficSeoPage() {
 
       <StatStrip stats={stats} />
 
-      {withTraffic.length === 0 && competitors.length > 0 && (
-        // Honest coverage note (ui-constraints §14): rows exist but every metric is
-        // null — DataForSEO Labs has no ranked-keyword/traffic data for these
-        // domains yet (common for smaller country-specific betting sites). Dashes
-        // without an explanation read as "broken".
+      {withVisibility.length === 0 && competitors.length > 0 && (
+        // Honest coverage note (ui-constraints §14): the live-SERP sweep returned no
+        // results for any tracked competitor this week. Rare — a brand-new market or
+        // a transient SERP miss. Dashes without an explanation read as "broken".
         <div className="rounded-chip border border-watch/30 bg-watch/10 px-4 py-3 text-xs leading-relaxed text-ink-secondary">
-          DataForSEO has no ranked-keyword or traffic estimates for these competitor
-          domains yet — coverage for smaller country-specific domains typically
-          appears once they rank for enough tracked keywords. The scan checked every
-          competitor this week; the dashes are honest &ldquo;no data&rdquo;, not errors.
+          No live Google results came back for these competitors on this market&rsquo;s
+          keyword set this week — this can happen for a brand-new market or a transient
+          SERP miss. The scan swept every keyword; the dashes are honest &ldquo;no
+          data&rdquo;, not errors.
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <SectionCard
           title="Competitor comparison"
-          description="Domain authority and organic-vs-paid traffic mix this week."
+          description="Search visibility and organic-vs-paid presence across the tracked keyword set."
         >
           <DataTable
             columns={COMPETITOR_COLUMNS}
@@ -158,8 +156,8 @@ export default async function TrafficSeoPage() {
         </SectionCard>
 
         <SectionCard
-          title="Estimated monthly traffic"
-          description="Ranked by estimated organic + paid visits."
+          title="Search visibility"
+          description="Share of search voice across the tracked keyword set (organic + paid)."
         >
           <div className="rounded-card bg-card p-4 shadow-sh1">
             <SeoTrafficChart competitors={competitors} />

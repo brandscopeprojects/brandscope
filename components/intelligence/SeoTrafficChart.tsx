@@ -33,7 +33,7 @@ const TOKEN = {
   greyRamp: ["#6B6B78", "#8A8A96", "#9999A8", "#B4B4BE", "#CBCBD2"],
 } as const;
 
-type Datum = { name: string; traffic: number };
+type Datum = { name: string; value: number };
 
 function ChartTooltip(props: {
   active?: boolean;
@@ -46,21 +46,22 @@ function ChartTooltip(props: {
     <div className="rounded-card bg-card px-3 py-2 shadow-sh3">
       <p className="text-sm font-semibold text-ink">{d.name}</p>
       <p className="mt-0.5 font-mono text-xs text-ink-secondary">
-        {d.traffic.toLocaleString()} est. monthly visits
+        {d.value}/100 search visibility
       </p>
     </div>
   );
 }
 
 export function SeoTrafficChart({ competitors }: { competitors: CompetitorSeo[] }) {
+  // domainAuthority carries the live-SERP visibility score (SOSV 0–100).
   const data: Datum[] = competitors
-    .filter((c) => c.estimatedTraffic != null)
-    .map((c) => ({ name: c.name, traffic: c.estimatedTraffic as number }));
+    .filter((c) => c.domainAuthority != null)
+    .map((c) => ({ name: c.name, value: c.domainAuthority as number }));
 
   if (data.length === 0) {
     return (
       <div className="flex h-full min-h-[180px] items-center justify-center rounded-chip border border-dashed border-divider px-4 text-center text-sm text-ink-secondary">
-        Estimated traffic appears once DataForSEO returns volume for these competitors.
+        Search visibility appears once live Google results come back for these competitors.
       </div>
     );
   }
@@ -79,10 +80,10 @@ export function SeoTrafficChart({ competitors }: { competitors: CompetitorSeo[] 
           <CartesianGrid horizontal={false} stroke={TOKEN.divider} strokeOpacity={0.6} />
           <XAxis
             type="number"
+            domain={[0, 100]}
             tick={{ fill: TOKEN.inkFaint, fontSize: 11 }}
             tickLine={false}
             axisLine={{ stroke: TOKEN.divider }}
-            tickFormatter={(v: number) => v.toLocaleString()}
           />
           <YAxis
             type="category"
@@ -93,15 +94,15 @@ export function SeoTrafficChart({ competitors }: { competitors: CompetitorSeo[] 
             axisLine={{ stroke: TOKEN.divider }}
           />
           <Tooltip cursor={{ fill: TOKEN.divider, fillOpacity: 0.3 }} content={<ChartTooltip />} />
-          <Bar dataKey="traffic" radius={[0, 4, 4, 0]} isAnimationActive={false}>
+          <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
             {data.map((d, i) => (
               <Cell key={d.name} fill={TOKEN.greyRamp[Math.min(i, TOKEN.greyRamp.length - 1)]} />
             ))}
             <LabelList
-              dataKey="traffic"
+              dataKey="value"
               position="right"
               formatter={(v: unknown) =>
-                typeof v === "number" ? v.toLocaleString() : String(v ?? "")
+                typeof v === "number" ? String(v) : String(v ?? "")
               }
               fill={TOKEN.inkSecondary}
               fontSize={11}
