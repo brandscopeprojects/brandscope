@@ -33,7 +33,13 @@ const COMPETITOR_COLUMNS: Column<CompetitorSeo>[] = [
     cell: (c) => (
       <span className="inline-flex items-center gap-2">
         <span className="font-medium text-ink">{c.name}</span>
-        <TierBadge tier={c.tier} />
+        {c.isOwnBrand ? (
+          <span className="rounded-chip bg-cobalt/10 px-1.5 py-0.5 font-mono text-[0.6rem] uppercase tracking-wide text-cobalt">
+            You
+          </span>
+        ) : (
+          <TierBadge tier={c.tier} />
+        )}
       </span>
     ),
   },
@@ -120,9 +126,11 @@ export default async function TrafficSeoPage() {
   }
 
   const { scanWeek, competitors, keywordGaps } = data;
+  // Rivals only (exclude the synthetic "you" row) for field-level stats.
+  const rivals = competitors.filter((c) => !c.isOwnBrand);
 
   // Headline stats — real, derivable values only.
-  const withVisibility = competitors.filter((c) => c.domainAuthority != null);
+  const withVisibility = rivals.filter((c) => c.domainAuthority != null);
   const avgVisibility =
     withVisibility.length > 0
       ? Math.round(
@@ -131,10 +139,10 @@ export default async function TrafficSeoPage() {
         )
       : null;
   const stats: Stat[] = [
-    { label: "Competitors tracked", value: competitors.length },
+    { label: "Competitors tracked", value: rivals.length },
     { label: "Keyword gaps found", value: keywordGaps.length },
     {
-      label: "Avg. search visibility",
+      label: "Avg. rival visibility",
       value: avgVisibility == null ? "—" : `${avgVisibility}/100`,
     },
   ];
@@ -148,7 +156,7 @@ export default async function TrafficSeoPage() {
 
       <StatStrip stats={stats} />
 
-      {withVisibility.length === 0 && competitors.length > 0 && (
+      {withVisibility.length === 0 && rivals.length > 0 && (
         // Honest coverage note (ui-constraints §14): the live-SERP sweep returned no
         // results for any tracked competitor this week. Rare — a brand-new market or
         // a transient SERP miss. Dashes without an explanation read as "broken".
@@ -169,6 +177,7 @@ export default async function TrafficSeoPage() {
             columns={COMPETITOR_COLUMNS}
             rows={competitors}
             getRowKey={(c) => c.competitorId}
+            isHighlighted={(c) => !!c.isOwnBrand}
             emptyLabel="No competitor SEO snapshots in this week's scan."
           />
           <Legend

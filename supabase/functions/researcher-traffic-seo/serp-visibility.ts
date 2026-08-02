@@ -90,14 +90,32 @@ export function buildSweepKeywords(
     const name = (c.name || "").trim();
     if (name) set.add(name);
   }
-  // C. Money terms — commercial intent, where conversions happen.
+  // C. Money & discovery terms — commercial intent, where conversions happen.
+  // A wider set so the gap table has substance (a 6-term set was too thin, and
+  // DataForSEO's long-tail volume for small markets is sparse). Each is one live
+  // SERP, cached per (market, week, keyword) — sibling brands pay nothing.
   if (market) {
     for (const t of [
+      // discovery / category
       `betting sites ${market}`,
-      `aviator ${market}`,
-      `deposit bonus ${market}`,
+      `sports betting ${market}`,
+      `online casino ${market}`,
       `betting app ${market}`,
+      `mobile betting ${market}`,
+      // product / vertical intent
+      `aviator ${market}`,
+      `football betting ${market}`,
+      `live betting ${market}`,
+      `virtual betting ${market}`,
+      `jackpot betting ${market}`,
+      `casino games ${market}`,
+      `premier league betting ${market}`,
+      // offer / bonus intent
+      `deposit bonus ${market}`,
+      `welcome bonus ${market}`,
       `free bets ${market}`,
+      `betting promotions ${market}`,
+      // decision / conversion intent
       `best betting odds ${market}`,
       `fastest withdrawal betting ${market}`,
     ]) set.add(t);
@@ -183,13 +201,26 @@ function organicWeight(rank: number | null): number {
  * SERP positions, and keyword gaps (keyword a rival ranks for and the brand does
  * not). `volumes` backfills search volume per keyword (lowercased) for gap ranking.
  */
+/** The BRAND's own SERP visibility snapshot (so the UI can show "where do I
+ *  stand?", not just rivals). Scored on the same scale as competitors. */
+export type BrandSelfVisibility = {
+  visibilityScore: number | null;
+  organicHits: number;
+  paidHits: number;
+};
+
+export type VisibilityResult = {
+  competitors: CompetitorVisibility[];
+  brandSelf: BrandSelfVisibility;
+};
+
 export function deriveCompetitorVisibility(
   sweep: SweepResult,
   competitors: CompetitorRef[],
   brandDomain: string,
   brandName: string,
   volumes: Map<string, number>,
-): CompetitorVisibility[] {
+): VisibilityResult {
   const brand = normDomain(brandDomain);
   const brandTerms = new Set(
     [brandName, `${brandName} login`, `${brandName} app`, `${brandName} bonus`]
@@ -205,50 +236,49 @@ export function deriveCompetitorVisibility(
     if (n) navTerms.add(n);
   }
 
-  // brand rank per keyword (for gap detection: gap = competitor ranks, brand does not).
-  const brandRankByKw = new Map<string, number | null>();
-  for (const kw of sweep.keywords) {
-    const items = sweep.serpByKeyword[kw.toLowerCase()] ?? sweep.serpByKeyword[kw] ?? [];
-    let best: number | null = null;
-    for (const it of items) {
-      if (it.type === "organic" && domainMatches(it.domain, brand)) {
-        if (best == null || (it.rank ?? 99) < best) best = it.rank ?? best;
-      }
-    }
-    brandRankByKw.set(kw, best);
-  }
-
-  const raw = competitors.map((c) => {
-    let score = 0;
+  // Score any domain over the sweep: raw SOSV points, organic/paid hit counts,
+  // SERP positions, and best organic rank per keyword.
+  function scoreEntity(dom: string) {
+    let rawScore = 0;
     let organicHits = 0;
     let paidHits = 0;
     const serpPositions: SerpPosition[] = [];
-    const gaps: KeywordGap[] = [];
-
+    const bestByKw = new Map<string, number | null>();
     for (const kw of sweep.keywords) {
       const items = sweep.serpByKeyword[kw.toLowerCase()] ?? sweep.serpByKeyword[kw] ?? [];
       let bestOrganic: number | null = null;
       let hasPaid = false;
       for (const it of items) {
-        if (!domainMatches(it.domain, c.domain)) continue;
+        if (!domainMatches(it.domain, dom)) continue;
         if (it.type === "organic") {
           if (bestOrganic == null || (it.rank ?? 99) < bestOrganic) bestOrganic = it.rank ?? bestOrganic;
         } else if (it.type === "paid") {
           hasPaid = true;
         }
       }
+      bestByKw.set(kw, bestOrganic);
       if (bestOrganic != null) {
         organicHits += 1;
-        score += organicWeight(bestOrganic);
+        rawScore += organicWeight(bestOrganic);
         serpPositions.push({ keyword: kw, position: bestOrganic, url: null });
       }
       if (hasPaid) {
         paidHits += 1;
-        score += 1; // spending on this term is real acquisition signal
+        rawScore += 1; // spending on this term is real acquisition signal
       }
-      // Gap: this competitor ranks top-10 on a MONEY/DISCOVERY term (not a brand
-      // name) and the brand does not rank at all → an actionable content gap.
+    }
+    return { rawScore, organicHits, paidHits, serpPositions, bestByKw };
+  }
+
+  const brandScored = scoreEntity(brand);
+  const brandRankByKw = brandScored.bestByKw; // gap = competitor ranks, brand does not
+
+  const raw = competitors.map((c) => {
+    const s = scoreEntity(c.domain);
+    const gaps: KeywordGap[] = [];
+    for (const kw of sweep.keywords) {
       const isNavTerm = navTerms.has(kw.toLowerCase());
+      const bestOrganic = s.bestByKw.get(kw) ?? null;
       if (!isNavTerm && bestOrganic != null && bestOrganic <= 10 && brandRankByKw.get(kw) == null) {
         gaps.push({
           keyword: kw,
@@ -259,31 +289,36 @@ export function deriveCompetitorVisibility(
         });
       }
     }
-
     gaps.sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0));
     return {
       competitor: c,
-      rawScore: score,
-      organicHits,
-      paidHits,
-      serpPositions: serpPositions.slice(0, MAX_SERP_POSITIONS),
+      rawScore: s.rawScore,
+      organicHits: s.organicHits,
+      paidHits: s.paidHits,
+      serpPositions: s.serpPositions.slice(0, MAX_SERP_POSITIONS),
       keywordGaps: gaps.slice(0, MAX_GAPS_PER_COMPETITOR),
     };
   });
 
-  const maxScore = Math.max(0, ...raw.map((r) => r.rawScore));
-  return raw.map((r) => ({
-    competitor: r.competitor,
-    // Relative SOSV: strongest tracked competitor = 100. null only when the whole
-    // sweep returned nothing (true no-data → honest empty state).
-    visibilityScore: !sweep.hadData
-      ? null
-      : maxScore > 0
-      ? Math.round((r.rawScore / maxScore) * 100)
-      : 0,
-    organicHits: r.organicHits,
-    paidHits: r.paidHits,
-    serpPositions: r.serpPositions,
-    keywordGaps: r.keywordGaps,
-  }));
+  // Normalise against the strongest of {brand, all competitors} so the brand sits
+  // on the same 0–100 scale as its rivals.
+  const maxScore = Math.max(0, brandScored.rawScore, ...raw.map((r) => r.rawScore));
+  const vis = (rawScore: number): number | null =>
+    !sweep.hadData ? null : maxScore > 0 ? Math.round((rawScore / maxScore) * 100) : 0;
+
+  return {
+    competitors: raw.map((r) => ({
+      competitor: r.competitor,
+      visibilityScore: vis(r.rawScore),
+      organicHits: r.organicHits,
+      paidHits: r.paidHits,
+      serpPositions: r.serpPositions,
+      keywordGaps: r.keywordGaps,
+    })),
+    brandSelf: {
+      visibilityScore: vis(brandScored.rawScore),
+      organicHits: brandScored.organicHits,
+      paidHits: brandScored.paidHits,
+    },
+  };
 }

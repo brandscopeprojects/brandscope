@@ -135,12 +135,12 @@ Deno.serve(withMeter(async (req) => {
 
     // 2. Derive per-competitor visibility / positions / gaps from the shared sweep
     // (pure — no extra provider calls) + a Haiku content-gap clustering.
-    const visibility = deriveCompetitorVisibility(
+    const { competitors: visList, brandSelf } = deriveCompetitorVisibility(
       sweep, competitors, msg.brand_domain, msg.brand_name, volumes,
     );
 
     const results: CompetitorSeoResult[] = [];
-    for (const vis of visibility) {
+    for (const vis of visList) {
       const c = vis.competitor;
       const contentGaps = await deriveContentGaps(sb, msg, c, vis.keywordGaps);
       const { organicPct, paidPct } = trafficSplitPct(vis.organicHits, vis.paidHits);
@@ -187,6 +187,14 @@ Deno.serve(withMeter(async (req) => {
           paid_hits: vis.paidHits,
           keywords_swept: sweep.keywords.length,
           sweep_had_data: sweep.hadData,
+          // The brand's OWN visibility, so the frontend can show a "you" row/bar.
+          // Same on every row (cheap); the data layer reads it from the first row.
+          brand_self: {
+            name: msg.brand_name,
+            visibility_score: brandSelf.visibilityScore,
+            organic_hits: brandSelf.organicHits,
+            paid_hits: brandSelf.paidHits,
+          },
           brand_demand_volume: demandByDomain[domainKey(c.domain)] ?? null,
           brand_trends_score: trendsByName[c.name.trim().toLowerCase()] ?? null,
           fetched_at: new Date().toISOString(),

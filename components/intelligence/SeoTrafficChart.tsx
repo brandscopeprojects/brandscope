@@ -28,12 +28,13 @@ const TOKEN = {
   inkFaint: "#9999A8",
   divider: "#E8E6E0",
   card: "#FFFFFF",
-  // Neutral grey ramp (mirrors the SOV donut convention) — no status colour,
-  // no cobalt, since these are competitors, not the own brand.
+  // Cobalt is reserved for the own-brand marker (ui-constraints §2.2).
+  cobalt: "#2B5CE6",
+  // Neutral grey ramp for competitors — no status colour.
   greyRamp: ["#6B6B78", "#8A8A96", "#9999A8", "#B4B4BE", "#CBCBD2"],
 } as const;
 
-type Datum = { name: string; value: number };
+type Datum = { name: string; value: number; own: boolean };
 
 function ChartTooltip(props: {
   active?: boolean;
@@ -56,7 +57,7 @@ export function SeoTrafficChart({ competitors }: { competitors: CompetitorSeo[] 
   // domainAuthority carries the live-SERP visibility score (SOSV 0–100).
   const data: Datum[] = competitors
     .filter((c) => c.domainAuthority != null)
-    .map((c) => ({ name: c.name, value: c.domainAuthority as number }));
+    .map((c) => ({ name: c.name, value: c.domainAuthority as number, own: !!c.isOwnBrand }));
 
   if (data.length === 0) {
     return (
@@ -96,7 +97,10 @@ export function SeoTrafficChart({ competitors }: { competitors: CompetitorSeo[] 
           <Tooltip cursor={{ fill: TOKEN.divider, fillOpacity: 0.3 }} content={<ChartTooltip />} />
           <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
             {data.map((d, i) => (
-              <Cell key={d.name} fill={TOKEN.greyRamp[Math.min(i, TOKEN.greyRamp.length - 1)]} />
+              <Cell
+                key={d.name}
+                fill={d.own ? TOKEN.cobalt : TOKEN.greyRamp[Math.min(i, TOKEN.greyRamp.length - 1)]}
+              />
             ))}
             <LabelList
               dataKey="value"

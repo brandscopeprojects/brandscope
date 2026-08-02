@@ -50,6 +50,8 @@ export type CompetitorSeo = {
   competitorId: string;
   name: string;
   tier: string | null;
+  /** True for the synthetic "you" row (the brand's own snapshot). */
+  isOwnBrand?: boolean;
   domainAuthority: number | null;
   estimatedTraffic: number | null;
   organicTraffic: number | null;
@@ -100,6 +102,29 @@ function toKeywordGap(raw: unknown): KeywordGap | null {
   };
 }
 
+/** Pull the brand's own visibility snapshot from any row's `raw_data.brand_self`
+ *  (the researcher writes the same blob on every competitor row). Null if absent
+ *  (e.g. a pre-refactor scan). */
+function readBrandSelf(
+  rows: Array<{ raw_data?: Json | null }>,
+): { name: string; visibilityScore: number | null; organicHits: number; paidHits: number } | null {
+  for (const r of rows) {
+    const rd = r.raw_data;
+    if (!rd || typeof rd !== "object" || Array.isArray(rd)) continue;
+    const bs = (rd as Record<string, unknown>).brand_self;
+    if (bs && typeof bs === "object" && !Array.isArray(bs)) {
+      const b = bs as Record<string, unknown>;
+      return {
+        name: typeof b.name === "string" ? b.name : "",
+        visibilityScore: num(b.visibility_score),
+        organicHits: num(b.organic_hits) ?? 0,
+        paidHits: num(b.paid_hits) ?? 0,
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * Latest `seo_cache` snapshot for the brand, mapped to view models.
  * `seo_cache` is PER-COMPETITOR (brand_id + competitor_id + scan_week): we fetch
@@ -115,7 +140,7 @@ export async function getTrafficSeoData(
   const { data: rows } = await supabase
     .from("seo_cache")
     .select(
-      "competitor_id, scan_week, domain_authority, estimated_traffic, organic_traffic, paid_traffic, keyword_gaps",
+      "competitor_id, scan_week, domain_authority, estimated_traffic, organic_traffic, paid_traffic, keyword_gaps, raw_data",
     )
     .eq("brand_id", brand.id);
 
@@ -131,7 +156,7 @@ export async function getTrafficSeoData(
   const nameMap = competitorNameMap(brandCompetitors);
   const tierMap = new Map(brandCompetitors.map((c) => [c.id, c.tier]));
 
-  const competitors: CompetitorSeo[] = latest
+  const competitorRows: CompetitorSeo[] = latest
     // Only surface rows we can resolve to a tracked competitor name.
     .filter((r) => nameMap.has(r.competitor_id))
     .map((r) => {
@@ -147,6 +172,7 @@ export async function getTrafficSeoData(
         competitorId: r.competitor_id,
         name: nameMap.get(r.competitor_id) ?? r.competitor_id,
         tier: tierMap.get(r.competitor_id) ?? null,
+        isOwnBrand: false,
         domainAuthority: num(r.domain_authority),
         estimatedTraffic: num(r.estimated_traffic),
         organicTraffic: organic,
@@ -155,10 +181,35 @@ export async function getTrafficSeoData(
         paidPct: hasSplit && split > 0 ? Math.round(((paid ?? 0) / split) * 100) : null,
         keywordGaps,
       } satisfies CompetitorSeo;
-    })
-    // Stable, useful order: strongest search visibility first (SOSV in
-    // domainAuthority; estimatedTraffic is null under the live-SERP model).
-    .sort((a, b) => (b.domainAuthority ?? 0) - (a.domainAuthority ?? 0));
+    });
+
+  // The brand's OWN snapshot (raw_data.brand_self, written by the researcher) →
+  // a highlighted "you" row so the customer sees where THEY stand, not just rivals.
+  const self = readBrandSelf(latest);
+  const ownRow: CompetitorSeo | null = self
+    ? (() => {
+        const split = self.organicHits + self.paidHits;
+        return {
+          competitorId: `self:${brand.id}`,
+          name: self.name || brand.name,
+          tier: null,
+          isOwnBrand: true,
+          domainAuthority: self.visibilityScore,
+          estimatedTraffic: null,
+          organicTraffic: self.organicHits,
+          paidTraffic: self.paidHits,
+          organicPct: split > 0 ? Math.round((self.organicHits / split) * 100) : null,
+          paidPct: split > 0 ? Math.round((self.paidHits / split) * 100) : null,
+          keywordGaps: [],
+        } satisfies CompetitorSeo;
+      })()
+    : null;
+
+  // Own brand + competitors, strongest search visibility first (own row sorts in
+  // by its real score; the highlight makes it identifiable regardless of position).
+  const competitors: CompetitorSeo[] = [...(ownRow ? [ownRow] : []), ...competitorRows].sort(
+    (a, b) => (b.domainAuthority ?? 0) - (a.domainAuthority ?? 0),
+  );
 
   // Union of keyword gaps across competitors, dedup'd by keyword (keep the
   // highest-volume occurrence), sorted volume-desc.
