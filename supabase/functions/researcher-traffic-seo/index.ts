@@ -34,6 +34,8 @@ import {
 } from "./dataforseo-seo.ts";
 import {
   buildSweepKeywords,
+  discoverMoneyKeywords,
+  curatedMoneyKeywords,
   runSerpSweep,
   deriveCompetitorVisibility,
 } from "./serp-visibility.ts";
@@ -112,9 +114,19 @@ Deno.serve(withMeter(async (req) => {
       },
     ).catch(() => ({ value: {} as Record<string, number>, fromCache: false }));
 
-    // 1. LIVE-SERP visibility sweep (Route A). One curated keyword set for the whole
-    // market; each keyword's SERP cached per (market, week, keyword).
-    const sweepKeywords = buildSweepKeywords(msg.brand_name, market0, competitors);
+    // 1. EVIDENCE-BASED keyword discovery — the real top keywords by Google search
+    // volume for this market (cached), instead of hand-guessed terms. Falls back to
+    // a curated set only if discovery returns nothing.
+    const discovered = await discoverMoneyKeywords(
+      sb, market0, location, language, msg.brand_name, competitors,
+    );
+    const money = discovered.length >= 5
+      ? discovered.map((d) => d.keyword)
+      : curatedMoneyKeywords(market0);
+
+    // 2. LIVE-SERP visibility sweep. brand-defense + conquest + money terms; each
+    // keyword's SERP cached per (market, week, keyword).
+    const sweepKeywords = buildSweepKeywords(msg.brand_name, market0, competitors, money);
     const sweep = await runSerpSweep(sb, market0, sweepKeywords, location, language);
 
     // Search-volume backfill for the swept keywords (one batched Google Ads call,
@@ -132,10 +144,12 @@ Deno.serve(withMeter(async (req) => {
     );
     const volumes = new Map<string, number>();
     for (const [k, v] of Object.entries(volumeByKw)) if (v != null) volumes.set(k.toLowerCase(), v);
+    // Discovery volumes are authoritative (real Google search volume) — prefer them.
+    for (const d of discovered) if (d.volume != null) volumes.set(d.keyword, d.volume);
 
     // 2. Derive per-competitor visibility / positions / gaps from the shared sweep
     // (pure — no extra provider calls) + a Haiku content-gap clustering.
-    const { competitors: visList, brandSelf } = deriveCompetitorVisibility(
+    const { competitors: visList, brandSelf, landscape } = deriveCompetitorVisibility(
       sweep, competitors, msg.brand_domain, msg.brand_name, volumes,
     );
 
@@ -195,6 +209,9 @@ Deno.serve(withMeter(async (req) => {
             organic_hits: brandSelf.organicHits,
             paid_hits: brandSelf.paidHits,
           },
+          // Keyword-centric ranking landscape (same blob on each row; the data
+          // layer reads it from the first row) — powers the mobile keyword cards.
+          keyword_landscape: landscape,
           brand_demand_volume: demandByDomain[domainKey(c.domain)] ?? null,
           brand_trends_score: trendsByName[c.name.trim().toLowerCase()] ?? null,
           fetched_at: new Date().toISOString(),

@@ -70,6 +70,16 @@ export type RankedKeywordGap = KeywordGap & {
   competitorName: string;
 };
 
+/** One keyword's competitive ranking landscape (keyword-centric view): search
+ *  volume, the brand's own rank, and each competitor's rank. Powers the mobile
+ *  keyword cards. Sorted by volume desc; money/discovery terms only. */
+export type KeywordLandscapeRow = {
+  keyword: string;
+  volume: number | null;
+  brandRank: number | null;
+  competitors: Array<{ name: string; rank: number }>;
+};
+
 export type TrafficSeoData = {
   scanWeek: string;
   competitors: CompetitorSeo[];
@@ -77,6 +87,8 @@ export type TrafficSeoData = {
    *  the highest-volume occurrence, sorted volume-desc. Full list (the page
    *  caps + flags truncation rather than silently dropping). */
   keywordGaps: RankedKeywordGap[];
+  /** Keyword-centric ranking landscape (real volume, your rank + rivals' ranks). */
+  landscape: KeywordLandscapeRow[];
 };
 
 function asArray(json: Json | null): unknown[] {
@@ -123,6 +135,37 @@ function readBrandSelf(
     }
   }
   return null;
+}
+
+/** Pull the keyword-ranking landscape from any row's `raw_data.keyword_landscape`
+ *  (same blob on every competitor row). [] if absent (pre-refactor scan). */
+function readLandscape(rows: Array<{ raw_data?: Json | null }>): KeywordLandscapeRow[] {
+  for (const r of rows) {
+    const rd = r.raw_data;
+    if (!rd || typeof rd !== "object" || Array.isArray(rd)) continue;
+    const kl = (rd as Record<string, unknown>).keyword_landscape;
+    if (!Array.isArray(kl)) continue;
+    return kl
+      .map((raw): KeywordLandscapeRow | null => {
+        if (!raw || typeof raw !== "object") return null;
+        const o = raw as Record<string, unknown>;
+        const keyword = typeof o.keyword === "string" ? o.keyword : null;
+        if (!keyword) return null;
+        const competitors = Array.isArray(o.competitors)
+          ? (o.competitors as unknown[])
+              .map((c) => {
+                const cc = (c ?? {}) as Record<string, unknown>;
+                const name = typeof cc.name === "string" ? cc.name : null;
+                const rank = num(cc.rank);
+                return name && rank != null ? { name, rank } : null;
+              })
+              .filter((x): x is { name: string; rank: number } => x !== null)
+          : [];
+        return { keyword, volume: num(o.volume), brandRank: num(o.brandRank), competitors };
+      })
+      .filter((x): x is KeywordLandscapeRow => x !== null);
+  }
+  return [];
 }
 
 /**
@@ -231,5 +274,5 @@ export async function getTrafficSeoData(
     (a, b) => (b.volume ?? 0) - (a.volume ?? 0),
   );
 
-  return { scanWeek, competitors, keywordGaps };
+  return { scanWeek, competitors, keywordGaps, landscape: readLandscape(latest) };
 }

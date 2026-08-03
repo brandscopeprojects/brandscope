@@ -14,17 +14,14 @@ import { EmptyState } from "@/components/intelligence/EmptyState";
 import { StatStrip, type Stat } from "@/components/intelligence/StatStrip";
 import { DataTable, type Column } from "@/components/intelligence/DataTable";
 import { TierBadge } from "@/components/intelligence/TierBadge";
-import { SeoKeywordGapTable } from "@/components/intelligence/SeoKeywordGapTable";
+import { KeywordLandscape } from "@/components/intelligence/KeywordLandscape";
 import { SeoTrafficChart } from "@/components/intelligence/SeoTrafficChart";
 import type { CompetitorSeo } from "@/lib/data/traffic-seo";
 
 export const dynamic = "force-dynamic";
 
 const SUBTITLE =
-  "Search visibility, organic-vs-paid presence and keyword gaps across your tracked competitors — from live Google results.";
-
-// Cap the keyword-gap table; surface the count rather than silently truncating.
-const KEYWORD_GAP_CAP = 25;
+  "The most-searched betting terms in this market, and where you rank vs your competitors — from live Google results.";
 
 const COMPETITOR_COLUMNS: Column<CompetitorSeo>[] = [
   {
@@ -125,7 +122,7 @@ export default async function TrafficSeoPage() {
     );
   }
 
-  const { scanWeek, competitors, keywordGaps } = data;
+  const { scanWeek, competitors, keywordGaps, landscape } = data;
   // Rivals only (exclude the synthetic "you" row) for field-level stats.
   const rivals = competitors.filter((c) => !c.isOwnBrand);
 
@@ -146,9 +143,6 @@ export default async function TrafficSeoPage() {
       value: avgVisibility == null ? "—" : `${avgVisibility}/100`,
     },
   ];
-
-  const shownGaps = keywordGaps.slice(0, KEYWORD_GAP_CAP);
-  const truncated = keywordGaps.length - shownGaps.length;
 
   return (
     <div className="space-y-6">
@@ -202,23 +196,17 @@ export default async function TrafficSeoPage() {
       </div>
 
       <SectionCard
-        title="Top keyword gaps"
-        description="High-volume keywords your competitors rank for, across all tracked competitors."
+        title="Keyword rankings"
+        description="The most-searched betting terms in this market — where you rank vs your competitors, by real search volume."
       >
-        <SeoKeywordGapTable rows={shownGaps} />
+        <KeywordLandscape rows={landscape} />
         <Legend
           items={[
-            { term: "Volume", def: "monthly searches for that term — bigger = more customers." },
-            { term: "Rank", def: "Google position (#1 = top; lower is better)." },
-            { term: "Not ranking", def: "you don't appear on the page for that search." },
+            { term: "Volume", def: "monthly Google searches for that term." },
+            { term: "You", def: "your rank — green #1–3, amber #4–10, grey = not ranking." },
+            { term: "Chips", def: "rivals ranking for it, with their position." },
           ]}
         />
-        {truncated > 0 && (
-          <p className="text-xs text-ink-faint">
-            Showing the top {KEYWORD_GAP_CAP} of {keywordGaps.length} keyword gaps by search
-            volume.
-          </p>
-        )}
       </SectionCard>
     </div>
   );
