@@ -34,6 +34,28 @@ function estimateCost(model: string, inTok: number, outTok: number): number {
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
+// Default per-call wall-clock timeout for provider HTTP. Without this a hung
+// upstream connection blocks until the 150s Edge worker limit kills the whole
+// function (observed: synthesis 546 timeouts, no spend billed because the fetch
+// never resolved). A bounded timeout converts an infinite hang into a fast,
+// retryable error so the job's synthesis-retry gets several quick attempts
+// within budget instead of one 150s stall. Sized so the typical synthesis path
+// (supervisor + 1 draft + 1 audit ≈ 3 calls) stays well under the worker limit.
+const LLM_TIMEOUT_MS = 45_000;
+
+/** Fetch that aborts after `ms`, surfacing a clear provider-timeout error. */
+async function llmFetch(url: string, init: RequestInit, ms: number, label: string): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(ms) });
+  } catch (e) {
+    // TimeoutError (AbortSignal.timeout) or a network abort → normalise the message.
+    if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
+      throw new Error(`${label} timeout after ${ms}ms`);
+    }
+    throw e;
+  }
+}
+
 /** Anthropic Messages API. Use MODELS.sonnet or MODELS.haiku. */
 export async function callClaude(opts: {
   model: string;
@@ -41,9 +63,10 @@ export async function callClaude(opts: {
   messages: ChatMessage[];
   maxTokens?: number;
   temperature?: number;
+  timeoutMs?: number;
 }): Promise<LlmResult> {
   const key = requireEnv("ANTHROPIC_API_KEY");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await llmFetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "x-api-key": key,
@@ -57,7 +80,7 @@ export async function callClaude(opts: {
       system: opts.system,
       messages: opts.messages.map((m) => ({ role: m.role, content: m.content })),
     }),
-  });
+  }, opts.timeoutMs ?? LLM_TIMEOUT_MS, "Anthropic");
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const text = guardOutput(
@@ -82,7 +105,7 @@ export async function callOpenAIChat(opts: {
     ...(opts.system ? [{ role: "system", content: opts.system }] : []),
     ...opts.messages,
   ];
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await llmFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -91,7 +114,7 @@ export async function callOpenAIChat(opts: {
       max_tokens: opts.maxTokens ?? 1200,
       temperature: opts.temperature ?? 0.4,
     }),
-  });
+  }, LLM_TIMEOUT_MS, "OpenAI");
   if (!res.ok) throw new Error(`OpenAI ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const text = guardOutput(data.choices?.[0]?.message?.content ?? "");
@@ -135,7 +158,7 @@ export async function callOpenAIWebSearch(opts: {
 }): Promise<LlmResult> {
   const key = requireEnv("OPENAI_API_KEY");
   const model = opts.model ?? MODELS.gpt;
-  const res = await fetch("https://api.openai.com/v1/responses", {
+  const res = await llmFetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -144,7 +167,7 @@ export async function callOpenAIWebSearch(opts: {
       input: opts.prompt,
       max_output_tokens: opts.maxOutputTokens ?? 1200,
     }),
-  });
+  }, 60_000, "OpenAI responses"); // web-search runs are slower — allow more headroom
   if (!res.ok) throw new Error(`OpenAI responses ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const text = guardOutput(extractResponsesText(data));
@@ -168,7 +191,7 @@ export async function callClaudeWebSearch(opts: {
 }): Promise<LlmResult> {
   const key = requireEnv("ANTHROPIC_API_KEY");
   const model = opts.model ?? MODELS.sonnet;
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await llmFetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "x-api-key": key,
@@ -181,7 +204,7 @@ export async function callClaudeWebSearch(opts: {
       messages: [{ role: "user", content: opts.prompt }],
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: opts.maxSearches ?? 3 }],
     }),
-  });
+  }, 60_000, "Anthropic web search"); // web-search runs are slower — allow more headroom
   if (!res.ok) throw new Error(`Anthropic web search ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const text = guardOutput(
@@ -201,11 +224,11 @@ export async function callClaudeWebSearch(opts: {
 /** OpenAI embeddings (text-embedding-3-small, 1536-dim) for regulatory RAG. */
 export async function embed(input: string | string[]): Promise<number[][]> {
   const key = requireEnv("OPENAI_API_KEY");
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
+  const res = await llmFetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: MODELS.embed, input }),
-  });
+  }, 30_000, "OpenAI embeddings");
   if (!res.ok) throw new Error(`OpenAI embeddings ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const usedTokens = data.usage?.total_tokens ?? 0;
@@ -218,11 +241,11 @@ export async function moderate(
   input: string,
 ): Promise<{ flagged: boolean; result: unknown }> {
   const key = requireEnv("OPENAI_API_KEY");
-  const res = await fetch("https://api.openai.com/v1/moderations", {
+  const res = await llmFetch("https://api.openai.com/v1/moderations", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: MODELS.moderation, input }),
-  });
+  }, 20_000, "OpenAI moderation");
   if (!res.ok) throw new Error(`OpenAI moderation ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const result = data.results?.[0] ?? { flagged: false };
