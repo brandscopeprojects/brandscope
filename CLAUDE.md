@@ -16,6 +16,7 @@ An AI competitive-intelligence and marketing operating system for iGaming brands
 ## Skill / reference files — when to check each
 | File | Check before… |
 |---|---|
+| `docs/skills/focused-investigation.md` | **investigating ANY issue/task** — the *how-to-look* gate: go to the one object, never scan the whole repo. |
 | `docs/skills/mvp-constraints.md` | **starting any feature** — the scope gate. Not on the list → stop & flag. |
 | `docs/skills/schema-decisions.md` | any migration / table or column reference |
 | `docs/schema-amendments.md` | writing SQL / migrations (authoritative deltas to the locked schema) |
@@ -51,6 +52,7 @@ xAI/Grok · Together/Meta · DeepSeek · Kimi · Resend · Deployer · HITL revi
 ---
 
 ## Anti-drift protocol
+0. **Scope every investigation** via `focused-investigation.md` — name the one object, go to *its* source of truth (prefer the live DB/deployed function over repo files), never scan the whole repo. Widen one object at a time, out loud.
 1. **Work the 80-step order** (`mvp-constraints.md` §4). Announce the step before starting it ("Step N: …").
 2. **Re-read the relevant skill file at every boundary** — start of a new file, and before any fetch / cache write / key reference / token choice. In long sessions, trust the file, not memory.
 3. **One commit per step** (or tight sub-step), descriptive message → diff stays auditable, drift is visible.
