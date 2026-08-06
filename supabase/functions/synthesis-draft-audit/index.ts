@@ -18,6 +18,7 @@ import { callClaude, loggedLlm, parseJsonFromModel } from "../_shared/llm.ts";
 import { asUntrustedData } from "../_shared/guard.ts";
 import { invokeFunction } from "../_shared/scan.ts";
 import { resolveRoute } from "../_shared/router.ts";
+import { withMeter, setMeterCtx } from "../_shared/spend.ts";
 import { loadPrompt, renderPrompt } from "../_shared/prompts.ts";
 import {
   PROMPT_VERSION,
@@ -54,7 +55,7 @@ export type FinalRecommendation = {
   confidence_level: "high" | "medium" | "low" | "rejected";
 };
 
-Deno.serve(async (req: Request): Promise<Response> => {
+Deno.serve(withMeter(async (req: Request): Promise<Response> => {
   const pre = preflight(req);
   if (pre) return pre;
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -72,6 +73,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const sb = serviceClient();
+
+  // Meter this synthesis run's LLM spend into provider_spend (see spend.ts). The
+  // ScanSynthesisMessage carries no org, so resolve it from the brand for accurate
+  // per-org daily caps; brand_id/scan_job_id still attribute the scan-level cost.
+  const { data: brandOrg } = await sb.from("brands").select("organisation_id").eq("id", brand_id).maybeSingle();
+  setMeterCtx({
+    sb,
+    organisation_id: (brandOrg?.organisation_id as string | null) ?? null,
+    brand_id,
+    scan_job_id,
+    task_type: "synthesis",
+  });
 
   // Kill switch (Agent Control): drafter/auditor paused → no synthesis, job partial.
   // Fail-safe: any read problem → proceed.
@@ -134,7 +147,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const message = e instanceof Error ? e.message : String(e);
     return json({ ok: false, error: message }, 500);
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // 1. Context loading

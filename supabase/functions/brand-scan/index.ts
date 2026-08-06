@@ -19,7 +19,7 @@ import {
 } from "../_shared/scan.ts";
 import { MODULE_FUNCTION, MVP_MODULES, type CompetitorRef, type ScanModuleMessage } from "../_shared/contracts.ts";
 import { fetchDfsBalance } from "../_shared/dataforseo.ts";
-import { checkBudget } from "../_shared/spend.ts";
+import { checkBudget, checkDailyCap } from "../_shared/spend.ts";
 import { recordFeatureHealth } from "../_shared/logging.ts";
 
 // Module → its cache table. A module is "fresh" when that table already holds a
@@ -294,6 +294,34 @@ Deno.serve(async (req) => {
         },
         402,
       );
+    }
+
+    // 2d. LLM SPEND CAP (cost control, 2026-08-06): block a NEW scan if the org has
+    // already reached its daily Anthropic/OpenAI cap today. No live-balance floor for
+    // LLMs (no balance API) — daily cap only, summed from provider_spend. Fail-open.
+    for (const provider of ["anthropic", "openai"] as const) {
+      const cap = await checkDailyCap(sb, provider, brand.organisation_id ?? null);
+      if (!cap.allowed) {
+        await setScanStatus(sb, scanJobId, "failed", {
+          error_message: `spend cap reached: ${cap.reason}`,
+          completed_at: new Date().toISOString(),
+        });
+        await recordFeatureHealth(sb, {
+          scan_job_id: scanJobId,
+          brand_id: brandId,
+          scan_week: job.scan_week,
+          feature_category: "cost_governance",
+          feature_name: `${provider} spend cap`,
+          status: "failed",
+          root_cause: cap.reason ?? "spend cap reached",
+          resolution_suggested:
+            `Raise ${provider} daily_cap_usd in provider_budget_config, or wait for the daily reset, then re-trigger.`,
+        });
+        return json(
+          { ok: false, error: `spend cap reached: ${cap.reason}`, provider, daily_cap_usd: cap.dailyCap, spent_today_usd: cap.spentToday },
+          402,
+        );
+      }
     }
 
     await setScanStatus(sb, scanJobId, "running", {

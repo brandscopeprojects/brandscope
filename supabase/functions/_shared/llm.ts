@@ -6,7 +6,11 @@ import { requireEnv, optionalEnv } from "./env.ts";
 import { MODELS } from "./contracts.ts";
 import { guardOutput } from "./guard.ts";
 import { logAgentJob, type AgentJobLog } from "./logging.ts";
+import { addProviderSpend } from "./spend.ts";
 import type { SupabaseClient } from "./supabase.ts";
+
+// text-embedding-3-small: USD per 1M tokens (for cost metering).
+const EMBED_RATE_PER_1M = 0.02;
 
 export type LlmResult = {
   text: string;
@@ -61,13 +65,9 @@ export async function callClaude(opts: {
   );
   const inputTokens = data.usage?.input_tokens ?? 0;
   const outputTokens = data.usage?.output_tokens ?? 0;
-  return {
-    text,
-    inputTokens,
-    outputTokens,
-    model: opts.model,
-    costUsd: estimateCost(opts.model, inputTokens, outputTokens),
-  };
+  const costUsd = estimateCost(opts.model, inputTokens, outputTokens);
+  addProviderSpend("anthropic", costUsd); // meter into provider_spend (no-op off-context)
+  return { text, inputTokens, outputTokens, model: opts.model, costUsd };
 }
 
 /** OpenAI Chat Completions (MODELS.gpt — brand chat). */
@@ -97,13 +97,9 @@ export async function callOpenAIChat(opts: {
   const text = guardOutput(data.choices?.[0]?.message?.content ?? "");
   const inputTokens = data.usage?.prompt_tokens ?? 0;
   const outputTokens = data.usage?.completion_tokens ?? 0;
-  return {
-    text,
-    inputTokens,
-    outputTokens,
-    model: MODELS.gpt,
-    costUsd: estimateCost(MODELS.gpt, inputTokens, outputTokens),
-  };
+  const costUsd = estimateCost(MODELS.gpt, inputTokens, outputTokens);
+  addProviderSpend("openai", costUsd);
+  return { text, inputTokens, outputTokens, model: MODELS.gpt, costUsd };
 }
 
 // Web-search tool surcharges (USD per grounded call) — for cost logging only.
@@ -154,13 +150,9 @@ export async function callOpenAIWebSearch(opts: {
   const text = guardOutput(extractResponsesText(data));
   const inputTokens = data.usage?.input_tokens ?? 0;
   const outputTokens = data.usage?.output_tokens ?? 0;
-  return {
-    text,
-    inputTokens,
-    outputTokens,
-    model,
-    costUsd: estimateCost(model, inputTokens, outputTokens) + OPENAI_WEB_SEARCH_CALL,
-  };
+  const costUsd = estimateCost(model, inputTokens, outputTokens) + OPENAI_WEB_SEARCH_CALL;
+  addProviderSpend("openai", costUsd);
+  return { text, inputTokens, outputTokens, model, costUsd };
 }
 
 /**
@@ -201,13 +193,9 @@ export async function callClaudeWebSearch(opts: {
   const inputTokens = data.usage?.input_tokens ?? 0;
   const outputTokens = data.usage?.output_tokens ?? 0;
   const searches = data.usage?.server_tool_use?.web_search_requests ?? 0;
-  return {
-    text,
-    inputTokens,
-    outputTokens,
-    model,
-    costUsd: estimateCost(model, inputTokens, outputTokens) + searches * ANTHROPIC_WEB_SEARCH_CALL,
-  };
+  const costUsd = estimateCost(model, inputTokens, outputTokens) + searches * ANTHROPIC_WEB_SEARCH_CALL;
+  addProviderSpend("anthropic", costUsd);
+  return { text, inputTokens, outputTokens, model, costUsd };
 }
 
 /** OpenAI embeddings (text-embedding-3-small, 1536-dim) for regulatory RAG. */
@@ -220,6 +208,8 @@ export async function embed(input: string | string[]): Promise<number[][]> {
   });
   if (!res.ok) throw new Error(`OpenAI embeddings ${res.status}: ${await res.text()}`);
   const data = await res.json();
+  const usedTokens = data.usage?.total_tokens ?? 0;
+  addProviderSpend("openai", (usedTokens / 1_000_000) * EMBED_RATE_PER_1M);
   return (data.data ?? []).map((d: { embedding: number[] }) => d.embedding);
 }
 
