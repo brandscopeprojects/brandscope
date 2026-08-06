@@ -6,8 +6,9 @@
 // week-over-week bonus-keyword movement, and UPSERTs one promotions_cache row.
 //
 // SIGNALS ONLY — this function NEVER writes bonus_amount_kobo or
-// wagering_requirement; both stay null at MVP (UI explains via tooltip). DataForSEO
-// ONLY (no Firecrawl/Apify). All external content is UNTRUSTED → asUntrustedData
+// wagering_requirement; both stay null at MVP (UI explains via tooltip). PRIMARY
+// source = Firecrawl scrape of the competitor homepage (owner-approved 2026-08-06);
+// DataForSEO signals supplement it. All external content is UNTRUSTED → asUntrustedData
 // before any LLM. Service-role client; every query scoped to msg.brand_id.
 //
 // Budget ≤90s. Per agent-orchestration.md: completeModule records the outcome and
@@ -20,6 +21,7 @@ import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/sca
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { sha256 } from "../_shared/evidence.ts";
 import { languageCode } from "../_shared/dataforseo.ts";
+import { scrapeUrl } from "../_shared/firecrawl.ts";
 import type { ScanModuleMessage, CompetitorRef } from "../_shared/contracts.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import {
@@ -175,10 +177,25 @@ async function processCompetitor(
   // site, or is clearly betting/gaming content.
   const label = (competitor.name ?? "").trim() || stripDomain(competitor.domain);
   const apex = stripDomain(competitor.domain).toLowerCase();
+
+  // 1b. Firecrawl (owner-approved 2026-08-06): scrape the competitor homepage, which
+  // carries the live promo banners (verified: betPawa "25% Casino Cashback" etc.).
+  // PRIMARY, always-relevant promo source; DataForSEO signals supplement. One scrape
+  // per competitor, guarded by time headroom so the module stays under its 90s budget.
+  const scraped = Date.now() < deadline - 12_000
+    ? await scrapeUrl(`https://${apex}`, { timeoutMs: 25_000 })
+    : null;
+  const scrapedMention: ContentMention[] = scraped && scraped.markdown.length > 200
+    ? [{ text: scraped.markdown.slice(0, 4000), url: scraped.url, timestamp: new Date().toISOString() }]
+    : [];
+
   const news = freshNews.filter((n) => isRelevant(n.title, n.url, label, apex));
-  const mentions = freshMentions.filter((m) => isRelevant(m.text, m.url, label, apex));
+  // Scraped homepage is inherently current + on-domain → prepend it ahead of the
+  // gated DataForSEO mentions so it anchors classification + evidence.
+  const gatedMentions = freshMentions.filter((m) => isRelevant(m.text, m.url, label, apex));
+  const mentions = [...scrapedMention, ...gatedMentions];
   const offtopicNewsDropped = freshNews.length - news.length;
-  const offtopicMentionsDropped = freshMentions.length - mentions.length;
+  const offtopicMentionsDropped = freshMentions.length - gatedMentions.length;
 
   // 2. Haiku classifies promo TYPE + TITLE + novelty (SIGNALS ONLY, no amounts).
   const cls: PromoClassification = await classifyPromo(
@@ -195,9 +212,9 @@ async function processCompetitor(
   // as the wagering-direction signal (still a % delta, never an exact requirement).
   const wowWageringChangePct = wowBonusChangePct;
 
-  // 4. Pick the best source/promo URL for the evidence chain.
+  // 4. Pick the best source/promo URL for the evidence chain (prefer the scraped page).
   const promoUrl =
-    pickUrl(news, mentions) ?? null;
+    scraped?.url ?? pickUrl(news, mentions) ?? null;
   const sourceUrl = promoUrl ?? `https://${stripDomain(competitor.domain)}`;
 
   // Evidence hash over (source + the classified signal text) — provenance only.
@@ -229,6 +246,8 @@ async function processCompetitor(
     raw_data: {
       has_promo: cls.hasPromo,
       data_quality_score: cls.dataQualityScore,
+      firecrawl_scraped: scraped != null,
+      promo_page_title: scraped?.title ?? null,
       mention_count: mentions.length,
       news_count: news.length,
       // Freshness accounting — how many dated-stale items were excluded, and the
