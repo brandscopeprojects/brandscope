@@ -45,7 +45,8 @@ An AI competitive-intelligence and marketing operating system for iGaming brands
 5. **Extensions:** `vector` (not `pgvector`) + add `pg_cron`, `pg_net`, `pgmq`.
 
 ## Hard exclusions at MVP (never build)
-Firecrawl · Apify · xAI/Grok · Together/Meta · DeepSeek · Kimi · Resend · Deployer · HITL review UI · LangGraph · Temporal · n8n · WhatsApp/Slack delivery · multi-brand-per-org · white-label · public API · Fintech/FMCG/Telecom. If needed to finish a feature → stop, flag, wait. Never fake with a placeholder that pretends to work.
+xAI/Grok · Together/Meta · DeepSeek · Kimi · Resend · Deployer · HITL review UI · LangGraph · Temporal · n8n · WhatsApp/Slack delivery · multi-brand-per-org · white-label · public API · Fintech/FMCG/Telecom. If needed to finish a feature → stop, flag, wait. Never fake with a placeholder that pretends to work.
+**Owner-approved additions (2026-08-06), no longer excluded:** Firecrawl (promotions-page scraping) · Apify (social sentiment). See `docs/skills/mvp-module-sources.md` §4/§6/§8/§10.
 
 ---
 

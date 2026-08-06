@@ -1,9 +1,9 @@
 # MVP Module Sources — API → Endpoint → Table → Haiku Job
 
 **Check before:** writing any Researcher Edge Function or any external API call in a scan module.
-**Purpose:** the MVP-only source map. The API map (doc 6) and agent-arch (doc 7) route several modules through **Firecrawl/Apify** — those are **excluded at MVP**. This file is the replacement map. **Never reach for an excluded provider** (Firecrawl, Apify, xAI, Together, DeepSeek, Kimi, Resend). If a module seems to *need* one → stop and flag.
+**Purpose:** the MVP-only source map. **Owner update 2026-08-06:** **Firecrawl** (promotions-page scraping) and **Apify** (social sentiment) are now **approved** and no longer excluded — see §8 and §6/§10. Still **never reach for** xAI/Grok, Together/Meta, DeepSeek, Kimi, or Resend — if a module seems to *need* one of those → stop and flag.
 
-**MVP providers only:** DataForSEO · DetectZeStack · Claude (Sonnet 4.6 / Haiku 4.5) · OpenAI (GPT-4.1 Mini, embeddings, moderation) · Ideogram · Cloudflare R2 · Supabase.
+**MVP providers:** DataForSEO · DetectZeStack · Firecrawl (promotions) · Apify (social) · Claude (Sonnet 4.6 / Haiku 4.5) · OpenAI (GPT-4.1 Mini, embeddings, moderation) · Ideogram · Cloudflare R2 · Supabase.
 **DataForSEO base:** `https://api.dataforseo.com/v3/` · Basic auth `btoa(LOGIN:PASSWORD)`.
 
 ---
@@ -35,7 +35,7 @@
 - **Endpoint (CONFIRMED):** `GET https://detectzestack.com/analyze?url={domain}`, header **`X-API-Key: {DETECTZESTACK_API_KEY}`**. Webhook `POST /api/webhooks/detectzestack` (HMAC-SHA256).
   - The API-map's `https://api.detectzestack.com/v1/detect` is **wrong** — that host does not resolve (DNS failure, verified). Always use `detectzestack.com/analyze`.
   - **RapidAPI alternative** (if owner uses the RapidAPI route instead of the direct key): host `https://detectzestack.p.rapidapi.com/analyze?url={domain}`, headers `X-RapidAPI-Key: {key}` + `X-RapidAPI-Host: detectzestack.p.rapidapi.com`.
-  - ⚠️ **Pending owner:** a valid key for the chosen route. The currently-stored key returns `401 invalid API key` against the direct endpoint (verified). Owner will confirm direct-vs-RapidAPI + supply a valid key before Sprint 3 Step 18. Does **not** block Sprint 1.
+  - ✅ **Verified 2026-08-06:** the stored `DETECTZESTACK_API_KEY` works on the **direct** route (`X-API-Key` → HTTP 200, real technologies returned). The RapidAPI route returns `403 not subscribed` — **use the direct route**; only set `DETECTZESTACK_RAPIDAPI_HOST` if the owner later switches to RapidAPI. **Note:** DetectZeStack is HTTP-level, so it rarely surfaces client-side ad networks / payment gateways for betting sites — `ad_networks`/`payment_gateways` (and thus spend-intensity) are often legitimately empty; CDN/analytics/tag-managers/marketing-automation populate reliably.
 - **Haiku:** none — response is already structured. (Spend-intensity scoring computed in code.)
 
 ### 5. App Store  ✓ FULL  → writes `product_intel_cache` / `customer_intel_cache`
@@ -45,14 +45,14 @@
 ### 6. Customer  ⚠ PARTIAL  → writes `customer_intel_cache`
 - **Endpoints:** `dataforseo_labs/google/bulk_traffic_estimation/live` (traffic mix), `content_analysis/search/live` + `content_analysis/sentiment_analysis/live`, `dataforseo_labs/google/domain_intersection/live` (audience overlap), `dataforseo_labs/google/search_intent/live` (intent), App reviews (Module 5).
 - **Haiku:** infer demographic/geographic signals, complaint themes, 12-wk sentiment.
-- **EXCLUDED:** exact demographics, social sentiment, influencer signals → UI shows "Requires social intelligence — Phase 2". No fake numbers.
+- **Social sentiment:** now sourced via **Apify actors** (owner-approved 2026-08-06 — see §10; wiring TBD). Exact demographics + influencer signals remain **Phase 2** (UI shows "Requires social intelligence — Phase 2"); no fake numbers until wired.
 
 ### 7. Regulatory  ✓ FULL  → writes `regulatory_cache` (+ `regulatory_documents`,`document_chunks`,`ingestion_logs`)
 - **Endpoints:** `serp/google/news/live/advanced` (change detection); ingestion: fetch PDF → R2 → OpenAI `text-embedding-3-small` (1536) → pgvector.
 - **Claude:** Sonnet 4.6 verbatim RAG (**≥0.30 cosine noise-floor** — amended 2026-07-20: the original 0.80 rejected every chunk since text-embedding-3-small scores relevant text ~0.3–0.5; TOP_K ranking + Sonnet judgement do the precision filtering; cite document/section/page); Haiku for doc classification + chunk-quality scoring + compliance dimension checks.
 
 ### 8. Promotions  ⚠ PARTIAL → "Promotion **Signals**"  → writes `promotions_cache`
-- **NO Firecrawl.** **Endpoints:** `content_analysis/search/live` (bonus mentions across NG betting content), `serp/google/news/live/advanced` (promo announcements), App reviews (promo mentions), `keywords_data/google_ads/search_volume/live` (bonus-keyword movement), OnPage Content Parsing (proxy signals).
+- **Firecrawl approved (owner 2026-08-06):** scrape competitor **promotions pages directly** (verified working against African betting sites, e.g. betPawa/Betika) → enables extracting real bonus copy. Supplement with DataForSEO: `content_analysis/search/live` (bonus mentions), `serp/google/news/live/advanced` (promo announcements), App reviews (promo mentions), `keywords_data/google_ads/search_volume/live` (bonus-keyword movement). **Follow-up decision:** with Firecrawl scraping the page, exact `bonus_amount`/`wagering_requirement` become extractable — confirm whether to promote this module from "Signals" to full Promotions (was capped at signals only when scraping was excluded).
 - **Haiku:** classify promo *type* signals, extract bonus *mentions* (not exact amounts). Leave exact `bonus_amount_kobo`/`wagering_requirement` **null** at MVP; UI tooltip explains.
 
 ### 9. Hiring  ⚠ PARTIAL  → writes `hiring_signals_cache`
@@ -60,7 +60,7 @@
 - **Haiku:** classify role → signal type; interpret strategic meaning; geographic-expansion signal.
 
 ### 10. Social & Ads  ✗ PLACEHOLDER  → (Ad Network section reuses `tech_stack_cache`)
-- **NO Apify.** Social tab = "coming soon" copy (no data, no fake). **Ad Network Intelligence** section built from DetectZeStack `tech_stack_cache` (ad networks + spend-intensity). Nothing else.
+- **Apify approved (owner 2026-08-06):** social sentiment + activity sourced via **Apify actors** (near-term integration; actor selection + wiring TBD). Until wired, Social tab shows "coming soon" (no fake data). **Ad Network Intelligence** section built from DetectZeStack `tech_stack_cache` (note: ad-network detection is often sparse at HTTP level — see §4).
 
 ---
 
