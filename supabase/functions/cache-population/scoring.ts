@@ -76,23 +76,33 @@ export function demandNorm(
   if (brandTrendsScore == null) return vol;
   return round2(0.7 * vol + 0.3 * clamp(brandTrendsScore, 0, 100));
 }
+/** §1 SERP-visibility proxy: `domain_authority` is the live SERP share-of-visibility
+ *  score (0–100), already computed by researcher-traffic-seo. Used as the primary
+ *  reach tier because the traffic module holds estimated_traffic null by design, so
+ *  traffic_norm is structurally absent. Never touches estimated_traffic itself. */
+export function visibilityNorm(domainAuthority: number | null): number | null {
+  if (domainAuthority == null) return null;
+  return round2(clamp(domainAuthority, 0, 100));
+}
 /** reach_score. sovPct (§4) is computed across the set, passed in here. */
+export type ReachBasis = "traffic" | "visibility" | "brand_demand";
 export function reachScore(
   s: EntitySignals,
   sovPct: number | null,
-): { score: number | null; basis: "traffic" | "brand_demand" | null } {
+): { score: number | null; basis: ReachBasis | null } {
   const t = trafficNorm(s.estMonthlyTraffic);
-  // Demand-proxy fallback (scoring-formulas §1 amendment): substitute only when
-  // Labs traffic is absent.
-  const d = t == null ? demandNorm(s.brandDemandVolume, s.brandTrendsScore) : null;
-  const traffic = t ?? d;
-  const basis: "traffic" | "brand_demand" | null =
-    t != null ? "traffic" : d != null ? "brand_demand" : null;
+  // Tiered primary reach signal (scoring-formulas §1 amendments): Labs traffic when
+  // present, else SERP visibility (2026-08-06), else the brand-demand proxy (2026-07-17).
+  const v = t == null ? visibilityNorm(s.domainAuthority) : null;
+  const d = t == null && v == null ? demandNorm(s.brandDemandVolume, s.brandTrendsScore) : null;
+  const proxy = t ?? v ?? d;
+  const basis: ReachBasis | null =
+    t != null ? "traffic" : v != null ? "visibility" : d != null ? "brand_demand" : null;
   const k = keywordNorm(s.organicKeywordCount);
   // Need at least one reach signal; SOV alone (always present) is not enough to claim reach.
-  if (traffic == null && k == null) return { score: null, basis: null };
+  if (proxy == null && k == null) return { score: null, basis: null };
   return {
-    score: round2(0.5 * (traffic ?? 0) + 0.3 * (k ?? 0) + 0.2 * (sovPct ?? 0)),
+    score: round2(0.5 * (proxy ?? 0) + 0.3 * (k ?? 0) + 0.2 * (sovPct ?? 0)),
     basis: basis ?? "traffic",
   };
 }

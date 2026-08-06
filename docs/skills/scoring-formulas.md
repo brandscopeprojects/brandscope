@@ -26,9 +26,21 @@ demand_norm  = clamp(100 * log10(brand_demand_volume+1) / log10(DEMAND_REF), 0, 
 Constants: `DEMAND_REF = 100,000`.
 Sources: `keywords_data/google_ads/search_volume` (navigational volume for the
 brand name/domain label) + `keywords_data/google_trends/explore` (relative brand
-interest 0–100, owner-approved endpoint). The basis is persisted per entity as
-`reach_basis ∈ 'traffic' | 'brand_demand'` and labeled in the UI. The proxy NEVER
+interest 0–100, owner-approved endpoint). The proxy NEVER
 writes into `estimated_traffic` — absolute traffic stays null/dash when unknown.
+
+**SERP-visibility proxy tier (owner-approved 2026-08-06).** The traffic module
+reports SERP share-of-visibility, not visit volume, and holds `estimated_traffic`
+null by design — so `traffic_norm` is structurally absent, not occasionally missing.
+Before falling to the demand proxy, substitute the visibility score directly:
+```
+visibility_norm = clamp(domain_authority, 0, 100)   (domain_authority = live SERP SOSV 0–100)
+```
+Source: DataForSEO live SERP visibility, already computed by `researcher-traffic-seo`
+(no new call). Precedence for the primary tier is `traffic → visibility → brand_demand`;
+the winner is persisted per entity as `reach_basis ∈ 'traffic' | 'visibility' |
+'brand_demand'` and labeled in the UI. Like the demand proxy, this NEVER writes into
+`estimated_traffic` — absolute traffic stays null/dash when unknown.
 
 ## 2. aggression_score (Market Position Map Y-axis) — MVP-available signals only
 ```

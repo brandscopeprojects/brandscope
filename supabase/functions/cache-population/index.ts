@@ -211,7 +211,7 @@ Deno.serve(async (req) => {
     ];
     const { sov, basis: sovBasis } = shareOfVoice(sovInput);
 
-    // Brand scalar scores (reach carries its basis: traffic vs brand_demand proxy).
+    // Brand scalar scores (reach carries its basis: traffic → visibility → brand_demand).
     const { score: brandReach, basis: brandReachBasis } = reachScore(brandSignals, sov[brand_id]);
     const brandAggression = aggressionScore(brandSignals);
     const brandPromoNorm = promoActivityNorm(brandSignals.promoSignalCount);
@@ -330,8 +330,8 @@ Deno.serve(async (req) => {
         competitors_tracked: rivals.length,
         competitor_states: competitorStates as unknown as Record<string, unknown>[],
         radar_data: radar_data as unknown as Record<string, unknown>,
-        // Score-basis honesty flags (scoring-formulas §1/§4 amendments): traffic vs
-        // brand_demand proxy. competitor_states rows carry per-entity reachBasis.
+        // Score-basis honesty flags (scoring-formulas §1/§4 amendments): traffic →
+        // visibility → brand_demand. competitor_states rows carry per-entity reachBasis.
         raw_data: { reach_basis: brandReachBasis, sov_basis: sovBasis } as unknown as Record<string, unknown>,
         cached_at: nowIso,
         expires_at: expiresIso,

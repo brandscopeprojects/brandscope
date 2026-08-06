@@ -99,6 +99,8 @@ export type CompetitorState = {
   sovPct: number;
   threatScore: number | null;
   estimatedMonthlyTraffic: number | null;
+  /** Basis of reachScore (§1 amendments): traffic → visibility → brand_demand. */
+  reachBasis?: "traffic" | "visibility" | "brand_demand" | null;
 };
 
 /** weekly_cache.radar_data (types/view-models.ts RadarData). */

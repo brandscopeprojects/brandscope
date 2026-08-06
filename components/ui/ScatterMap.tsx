@@ -203,6 +203,12 @@ function ScatterTooltip(props: {
           domain yet)
         </p>
       )}
+      {d.reachBasis === "visibility" && (
+        <p className="mt-1.5 max-w-[220px] text-[11px] leading-snug text-ink-faint">
+          Reach basis: SERP visibility (share of search visibility; no traffic
+          estimate is published for this market)
+        </p>
+      )}
     </div>
   );
 }

@@ -12,8 +12,9 @@ export type CompetitorState = {
   sovPct: number; // 0..100
   threatScore: number | null;
   estimatedMonthlyTraffic: number | null;
-  /** Basis of reachScore: Labs traffic vs brand-search-demand proxy (§1 amendment). */
-  reachBasis?: "traffic" | "brand_demand" | null;
+  /** Basis of reachScore: Labs traffic, SERP-visibility proxy, or brand-search-demand
+   *  proxy (§1 amendments). */
+  reachBasis?: "traffic" | "visibility" | "brand_demand" | null;
 };
 
 export type CompetitorStatesCache = CompetitorState[]; // weekly_cache.competitor_states

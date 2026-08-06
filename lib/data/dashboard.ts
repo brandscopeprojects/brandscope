@@ -59,7 +59,12 @@ export async function getDashboardData(brand: BrandSummary): Promise<DashboardDa
     isOwnBrand: true,
     sovPct: cache.sov_pct,
     threatScore: cache.threat_score,
-    reachBasis: brandRawData.reach_basis === "brand_demand" ? "brand_demand" : null,
+    reachBasis:
+      brandRawData.reach_basis === "brand_demand"
+        ? "brand_demand"
+        : brandRawData.reach_basis === "visibility"
+          ? "visibility"
+          : null,
   };
   const competitorPoints: ScatterPoint[] = competitors.map((c) => ({
     id: c.id,
