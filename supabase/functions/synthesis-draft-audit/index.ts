@@ -256,6 +256,7 @@ async function loadContext(sb: SupabaseClient, brandId: string, scanWeek: string
 
 // ---------------------------------------------------------------------------
 // Build prompt from lightweight per-module summaries (~800 tokens total)
+// Gracefully handles partial failures where 1+ modules are missing.
 // ---------------------------------------------------------------------------
 
 function buildModuleDigest(ctx: Ctx): string {
@@ -270,15 +271,29 @@ function buildModuleDigest(ctx: Ctx): string {
     ["product_intel_cache", "Product intelligence"],
   ];
 
+  const availableCount = map.filter(([t]) => ctx.summaries[t] != null).length;
+  const missingModules = map.filter(([t]) => ctx.summaries[t] == null).map(([, label]) => label);
+
   const lines = map.map(([table, label]) => {
     const summary = ctx.summaries[table];
-    if (!summary) return `### ${label}: (no data this week)`;
+    if (!summary) {
+      // Partial failure: module was unreachable (DataForSEO API, network error, etc.)
+      return `### ${label}: [UNAVAILABLE - module failed]`;
+    }
     return `### ${label} [${summary.status}]
 - ${summary.key_takeaways.join(" / ")}
 - Action: ${summary.recommended_angle}`;
   });
 
-  return lines.join("\n\n");
+  let digest = lines.join("\n\n");
+
+  // If some modules are missing, add a disclaimer so the model knows it's a partial scan.
+  if (missingModules.length > 0) {
+    digest += `\n\n⚠️ NOTE: ${missingModules.length} of 8 modules were unavailable this week (${missingModules.join(", ")}).
+Synthesize recommendations from the ${availableCount} available modules.`;
+  }
+
+  return digest;
 }
 
 function brandHeader(ctx: Ctx): string {
