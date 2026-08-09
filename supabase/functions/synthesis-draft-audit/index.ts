@@ -126,7 +126,7 @@ Deno.serve(withMeter(async (req: Request): Promise<Response> => {
 
     // 5. Hand off to cache-population (the ONLY writer of weekly_cache/recommendations).
     //    We pass the brief + recommendations; we persist nothing ourselves.
-    await invokeFunction("cache-population", {
+    invokeFunction("cache-population", {
       scan_job_id,
       brand_id,
       scan_week,

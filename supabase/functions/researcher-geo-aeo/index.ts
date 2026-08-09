@@ -315,7 +315,7 @@ async function finish(
 ): Promise<Response> {
   const completedFanout = await completeModule(sb, msg.scan_job_id, "geo_aeo", outcome);
   if (completedFanout) {
-    await invokeFunction("synthesis-draft-audit", {
+    invokeFunction("synthesis-draft-audit", {
       scan_job_id: msg.scan_job_id,
       brand_id: msg.brand_id,
       scan_week: msg.scan_week,

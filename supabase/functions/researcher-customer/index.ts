@@ -284,7 +284,7 @@ Deno.serve(withMeter(async (req) => {
         scan_week: msg.scan_week,
       };
       await enqueueSynthesis(sb, synth);
-      await invokeFunction(SYNTHESIS_FN, synth);
+      invokeFunction(SYNTHESIS_FN, synth);
     }
 
     return json({ ok: true, outcome, competitors: competitors.length, succeeded, failed });
@@ -318,7 +318,7 @@ Deno.serve(withMeter(async (req) => {
           scan_week: msg.scan_week,
         };
         await enqueueSynthesis(sb, synth);
-        await invokeFunction(SYNTHESIS_FN, synth);
+        invokeFunction(SYNTHESIS_FN, synth);
       }
     } catch (_e) {
       // state-machine advance failed too; the 6h monitor / DLQ drainer recovers it.

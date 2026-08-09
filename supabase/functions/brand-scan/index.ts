@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
     for (const task of toRun) {
       const msg: ScanModuleMessage = { ...base, task_type: task };
       await enqueueModule(sb, msg);
-      await invokeFunction(MODULE_FUNCTION[task], msg);
+      invokeFunction(MODULE_FUNCTION[task], msg);
     }
 
     // 5. Return immediately — do NOT wait. Researchers drive completion →

@@ -95,7 +95,7 @@ Deno.serve(withMeter(async (req) => {
     if (finished) {
       const synth = { scan_job_id: msg.scan_job_id, brand_id: msg.brand_id, scan_week: msg.scan_week };
       await enqueueSynthesis(sb, synth);
-      await invokeFunction("synthesis-draft-audit", synth);
+      invokeFunction("synthesis-draft-audit", synth);
     }
 
     return json({ ok: true, outcome, competitors: total, failures });
@@ -124,7 +124,7 @@ Deno.serve(withMeter(async (req) => {
       if (finished) {
         const synth = { scan_job_id: msg.scan_job_id, brand_id: msg.brand_id, scan_week: msg.scan_week };
         await enqueueSynthesis(sb, synth);
-        await invokeFunction("synthesis-draft-audit", synth);
+        invokeFunction("synthesis-draft-audit", synth);
       }
     } catch (_e) { /* best-effort */ }
     return json({ ok: false, error: message }, 500);
