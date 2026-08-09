@@ -34,6 +34,7 @@ import {
   type NewsItem,
 } from "./dataforseo-promotions.ts";
 import { classifyPromo, type PromoClassification } from "./classify.ts";
+import { generateSynthesisSummary } from "../_shared/researcher-summarizer.ts";
 
 const MODULE = "promotions" as const;
 // Overall wall-clock guard — leave headroom under the 90s module budget.
@@ -264,6 +265,23 @@ async function processCompetitor(
       news: news.slice(0, 10),
     },
   };
+
+  // Generate synthesis summary before upserting
+  const synthesis_summary = await generateSynthesisSummary(
+    sb,
+    "Promotions / Bonuses",
+    JSON.stringify({
+      promo_type: cls.promoType,
+      promo_title: cls.promoTitle,
+      is_new: cls.isNew,
+      mention_count: mentions.length,
+      news_count: news.length,
+      bonus_keyword_volume_total: volume.total,
+    }, null, 2),
+    msg.scan_job_id,
+    msg.brand_id,
+  );
+  row.synthesis_summary = synthesis_summary;
 
   const { error } = await sb
     .from("promotions_cache")

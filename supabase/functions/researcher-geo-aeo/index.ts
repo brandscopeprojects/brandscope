@@ -33,6 +33,7 @@ import type { ScanModuleMessage } from "../_shared/contracts.ts";
 import { languageCode } from "../_shared/dataforseo.ts";
 import { optionalEnv } from "../_shared/env.ts";
 import { getOrFetchMarketIntelKeyed } from "../_shared/market-cache.ts";
+import { generateSynthesisSummary } from "../_shared/researcher-summarizer.ts";
 import {
   PLATFORMS,
   loadQueries,
@@ -190,6 +191,15 @@ Deno.serve(withMeter(async (req) => {
       platformColumns[`${p.key}_checked_at`] = a ? checkedAt : null;
     }
 
+    // 8. Generate synthesis summary before upserting
+    const synthesis_summary = await generateSynthesisSummary(
+      sb,
+      "GEO / AI Visibility",
+      JSON.stringify({ aiVisibilityScore, platformColumns, mentions: mentions.topMentions }, null, 2),
+      msg.scan_job_id,
+      msg.brand_id,
+    );
+
     // 8. UPSERT geo_cache on (brand_id, scan_week). Grok columns stay NULL (Phase 2).
     const { error: upsertError } = await sb.from("geo_cache").upsert(
       {
@@ -208,6 +218,7 @@ Deno.serve(withMeter(async (req) => {
           aeo: aeo.raw,
           query_count: queries.length,
         },
+        synthesis_summary,
       },
       { onConflict: "brand_id,scan_week" },
     );

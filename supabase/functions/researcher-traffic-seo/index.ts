@@ -24,6 +24,7 @@ import { loggedLlm, callClaude, parseJsonFromModel } from "../_shared/llm.ts";
 import { resolveRoute } from "../_shared/router.ts";
 import { loadPrompt } from "../_shared/prompts.ts";
 import { makeEvidence } from "../_shared/evidence.ts";
+import { generateSynthesisSummary } from "../_shared/researcher-summarizer.ts";
 import type { ContentGap, KeywordGap, SerpPosition } from "./types.ts";
 import {
   locationCode,
@@ -222,7 +223,14 @@ Deno.serve(withMeter(async (req) => {
 
     // 3. UPSERT seo_cache (per competitor) + competitor_profiles (per competitor).
     for (const res of results) {
-      await upsertSeoCache(sb, msg, res);
+      const summary = await generateSynthesisSummary(
+        sb,
+        "SEO / Traffic",
+        JSON.stringify(res, null, 2),
+        msg.scan_job_id,
+        msg.brand_id,
+      );
+      await upsertSeoCache(sb, msg, res, summary);
       await upsertCompetitorProfile(sb, msg, res);
     }
 
@@ -362,6 +370,7 @@ async function upsertSeoCache(
   sb: SupabaseClient,
   msg: ScanModuleMessage,
   res: CompetitorSeoResult,
+  synthesis_summary: any,
 ): Promise<void> {
   const { error } = await sb.from("seo_cache").upsert(
     {
@@ -376,6 +385,7 @@ async function upsertSeoCache(
       content_gaps: res.contentGaps as never,
       serp_positions: res.serpPositions as never,
       raw_data: { ...res.rawData, evidence: res.evidence } as never,
+      synthesis_summary,
     },
     { onConflict: "brand_id,scan_week,competitor_id" },
   );

@@ -27,6 +27,7 @@ import {
 } from "../_shared/contracts.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import { languageCode } from "../_shared/dataforseo.ts";
+import { generateSynthesisSummary } from "../_shared/researcher-summarizer.ts";
 import { fetchJobPostings, type JobPosting } from "./dataforseo-jobs.ts";
 import { classifyHiring } from "./classify.ts";
 
@@ -73,6 +74,21 @@ async function processCompetitor(
       postings,
     );
 
+    // 3. Generate synthesis summary before upserting
+    const synthesis_summary = await generateSynthesisSummary(
+      sb,
+      "Hiring / Talent Signals",
+      JSON.stringify({
+        roles: classified.roles.slice(0, 5),
+        signal_types: classified.signalTypes,
+        postings_found: postings.length,
+        geographic_expansion: classified.geographicExpansion.length,
+        interpreted_signals: classified.interpretedSignals.slice(0, 3),
+      }, null, 2),
+      msg.scan_job_id,
+      msg.brand_id,
+    );
+
     // 3. UPSERT hiring_signals_cache (onConflict brand_id,scan_week,competitor_id).
     //    raw_data keeps the real Jobs SERP payload for the evidence chain — no JD bodies.
     const { error: upsertError } = await sb
@@ -94,6 +110,7 @@ async function processCompetitor(
             postings, // titles/locations/dates/urls — the verifiable source rows
             scanned_at: new Date().toISOString(),
           } as unknown as Record<string, unknown>,
+          synthesis_summary,
         },
         { onConflict: "brand_id,scan_week,competitor_id" },
       );
