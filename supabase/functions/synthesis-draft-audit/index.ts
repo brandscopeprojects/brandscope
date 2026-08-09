@@ -333,6 +333,7 @@ async function runSynthesis(
       messages: [{ role: "user", content: user }],
       maxTokens: route.maxTokens,
       temperature: route.temperature,
+      cacheControl: "ephemeral",
     }),
   );
 

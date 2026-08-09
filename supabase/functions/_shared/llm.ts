@@ -27,9 +27,15 @@ const RATES: Record<string, [number, number]> = {
   [MODELS.gpt]: [0.4, 1.6],
 };
 
-function estimateCost(model: string, inTok: number, outTok: number): number {
+function estimateCost(model: string, inTok: number, outTok: number, cacheCreateTok: number = 0, cacheReadTok: number = 0): number {
   const [i, o] = RATES[model] ?? [0, 0];
-  return (inTok / 1_000_000) * i + (outTok / 1_000_000) * o;
+  // Regular input tokens at full rate; cache creation at full rate (written once);
+  // cache read tokens at 10% of input rate (90% discount per Anthropic pricing).
+  return (
+    ((inTok + cacheCreateTok) / 1_000_000) * i +
+    (cacheReadTok / 1_000_000) * (i * 0.1) +
+    (outTok / 1_000_000) * o
+  );
 }
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -64,8 +70,14 @@ export async function callClaude(opts: {
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  cacheControl?: "ephemeral"; // prompt caching (saves ~28% tokens on cache hits)
 }): Promise<LlmResult> {
   const key = requireEnv("ANTHROPIC_API_KEY");
+  const systemMsg = opts.system
+    ? opts.cacheControl === "ephemeral"
+      ? { type: "text" as const, text: opts.system, cache_control: { type: "ephemeral" as const } }
+      : { type: "text" as const, text: opts.system }
+    : undefined;
   const res = await llmFetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -77,7 +89,7 @@ export async function callClaude(opts: {
       model: opts.model,
       max_tokens: opts.maxTokens ?? 1500,
       temperature: opts.temperature ?? 0.3,
-      system: opts.system,
+      system: systemMsg ? [systemMsg] : undefined,
       messages: opts.messages.map((m) => ({ role: m.role, content: m.content })),
     }),
   }, opts.timeoutMs ?? LLM_TIMEOUT_MS, "Anthropic");
@@ -88,7 +100,9 @@ export async function callClaude(opts: {
   );
   const inputTokens = data.usage?.input_tokens ?? 0;
   const outputTokens = data.usage?.output_tokens ?? 0;
-  const costUsd = estimateCost(opts.model, inputTokens, outputTokens);
+  const cacheCreationTokens = data.usage?.cache_creation_input_tokens ?? 0;
+  const cacheReadTokens = data.usage?.cache_read_input_tokens ?? 0;
+  const costUsd = estimateCost(opts.model, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens);
   addProviderSpend("anthropic", costUsd); // meter into provider_spend (no-op off-context)
   return { text, inputTokens, outputTokens, model: opts.model, costUsd };
 }
