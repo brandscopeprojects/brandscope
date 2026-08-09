@@ -177,7 +177,7 @@ Deno.serve(withMeter(async (req) => {
         scan_week: msg.scan_week,
       };
       await enqueueSynthesis(sb, synth);
-      await invokeFunction(SYNTHESIS_FN, synth);
+      invokeFunction(SYNTHESIS_FN, synth);
     }
 
     return json({ ok: true, outcome, rows: rowsWritten, degraded: anyDegraded });
@@ -213,7 +213,7 @@ Deno.serve(withMeter(async (req) => {
           scan_week: msg.scan_week,
         };
         await enqueueSynthesis(sb, synth);
-        await invokeFunction(SYNTHESIS_FN, synth);
+        invokeFunction(SYNTHESIS_FN, synth);
       }
     } catch (_e) {
       // completeModule itself failed — the monitor will reconcile via DLQ.

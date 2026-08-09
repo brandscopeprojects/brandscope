@@ -145,7 +145,7 @@ async function drainDeadLetterQueue(sb: SupabaseClient): Promise<number> {
     }
 
     // Re-dispatch with the stored payload (fire-and-forget).
-    await invokeFunction(fnName, row.payload);
+    invokeFunction(fnName, row.payload);
 
     // Bump retry_count, mark 'retrying', schedule next exponential retry. We do
     // NOT mark resolved — the re-run worker confirms success via scan_jobs.

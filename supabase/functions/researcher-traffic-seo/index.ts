@@ -252,7 +252,7 @@ Deno.serve(withMeter(async (req) => {
         brand_id: msg.brand_id,
         scan_week: msg.scan_week,
       });
-      await invokeFunction("synthesis-draft-audit", {
+      invokeFunction("synthesis-draft-audit", {
         scan_job_id: msg.scan_job_id,
         brand_id: msg.brand_id,
         scan_week: msg.scan_week,
@@ -280,7 +280,7 @@ Deno.serve(withMeter(async (req) => {
     });
     const done = await completeModule(sb, msg.scan_job_id, "traffic_seo", "failed");
     if (done) {
-      await invokeFunction("synthesis-draft-audit", {
+      invokeFunction("synthesis-draft-audit", {
         scan_job_id: msg.scan_job_id,
         brand_id: msg.brand_id,
         scan_week: msg.scan_week,

@@ -226,7 +226,7 @@ Deno.serve(withMeter(async (req) => {
         scan_week: msg.scan_week,
       };
       await enqueueSynthesis(sb, synth);
-      await invokeFunction("synthesis-draft-audit", synth);
+      invokeFunction("synthesis-draft-audit", synth);
     }
 
     return json({
@@ -257,7 +257,7 @@ Deno.serve(withMeter(async (req) => {
           scan_week: msg.scan_week,
         };
         await enqueueSynthesis(sb, synth);
-        await invokeFunction("synthesis-draft-audit", synth);
+        invokeFunction("synthesis-draft-audit", synth);
       }
     } catch (_e) {
       // completeModule itself failed — the 6h monitor reconciles via DLQ.

@@ -1,7 +1,9 @@
 // synthesis-draft-audit — Edge Function (Deno).
 // Pipeline stage 5 (agent-orchestration.md §"End-to-end sequence"):
-//   Supervisor synthesis → Drafter (Five-Question filter, ≤2 retries) →
-//   Auditor (rubric, ≤1 rewrite, URGENT gating) → hand off to cache-population.
+//   ONE grounded synthesis call → deterministic guardrails (Five-Question evidence
+//   filter, dedup, URGENT gating, score→level) → hand off to cache-population.
+//   (Phase 1 simplification: replaced the former Supervisor→Drafter→Auditor chain
+//   of 3 sequential LLM calls, which stalled on the 150s worker limit.)
 //
 // CONTRACT: body = ScanSynthesisMessage { scan_job_id, brand_id, scan_week }.
 // Internal-auth gated (CRON_SECRET bearer). Service-role; every query scoped to
@@ -22,22 +24,19 @@ import { withMeter, setMeterCtx } from "../_shared/spend.ts";
 import { loadPrompt, renderPrompt } from "../_shared/prompts.ts";
 import {
   PROMPT_VERSION,
-  CONFIDENCE_FLOOR,
   levelFromScore,
-  SUPERVISOR_SYSTEM,
-  AUDITOR_SYSTEM,
-  DRAFTER_SYSTEM_TEMPLATE,
+  SYNTHESIS_SYSTEM,
   type SynthesisBrief,
+  type SynthesisOutput,
+  type SynthesisRecommendation,
   type DraftRecommendation,
-  type AuditVerdict,
 } from "./prompts.ts";
 
-// ---- Token / size budgets (≤90s wall-clock; keep prompts bounded) ----
+// ---- Token / size budgets (one call, well under the 45s LLM timeout) ----
 const MAX_ROWS_PER_CACHE = 12; // cap competitor rows fed per module
 const CACHE_TEXT_CAP = 1600; // chars per module block before wrapping
-const SUPERVISOR_MAX_TOKENS = 1200;
-const DRAFTER_MAX_TOKENS = 3000;
-const AUDITOR_MAX_TOKENS = 1500;
+// Brief (~300 tok) + up to 8 evidence-backed recs in one JSON object.
+const SYNTHESIS_MAX_TOKENS = 4500;
 
 // The final recommendation we hand to cache-population. Shape is intentionally the
 // jsonb the frontend reads (lib/data/*.ts): evidence element uses `timestamp`
@@ -121,18 +120,13 @@ Deno.serve(withMeter(async (req: Request): Promise<Response> => {
       prompt_version: PROMPT_VERSION,
     };
 
-    // 2. Supervisor synthesis → compact structured brief.
-    const brief = await runSupervisor(sb, logCtx, ctx);
-
-    // 3. Drafter → 4–8 candidate recs (≤2 retries if <4 valid).
-    const drafted = await runDrafter(sb, { ...logCtx, task_type: "draft" }, ctx, brief);
-
-    // 4. Auditor → score + gate URGENT + reject below floor (≤1 rewrite).
-    const audited = await runAuditor(sb, { ...logCtx, task_type: "audit" }, ctx, drafted);
+    // 2. ONE synthesis call → brief + self-scored recs; then deterministic guardrails
+    //    (real-evidence filter, dedup, URGENT gating, score→level) applied in code.
+    const { brief, recommendations: audited } = await runSynthesis(sb, logCtx, ctx);
 
     // 5. Hand off to cache-population (the ONLY writer of weekly_cache/recommendations).
     //    We pass the brief + recommendations; we persist nothing ourselves.
-    await invokeFunction("cache-population", {
+    invokeFunction("cache-population", {
       scan_job_id,
       brand_id,
       scan_week,
@@ -300,130 +294,96 @@ function memoryBlock(ctx: Ctx): string {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Supervisor
+// 2. Synthesis (one grounded call → brief + self-scored recs)
 // ---------------------------------------------------------------------------
 
 type LogCtx = { scan_job_id: string; brand_id: string; task_type: string; prompt_version: string };
 
-async function runSupervisor(sb: SupabaseClient, logCtx: LogCtx, ctx: Ctx): Promise<SynthesisBrief> {
-  const userMsg = [
-    brandHeader(ctx),
-    "",
-    memoryBlock(ctx),
-    "",
-    "Module intelligence for this week:",
-    buildModuleDigest(ctx),
-    "",
-    "Synthesise the cross-module competitive picture into the JSON brief.",
-  ].join("\n");
-
-  const route = await resolveRoute(sb, "synthesis", {
-    model: MODELS.sonnet,
-    temperature: 0.3,
-    maxTokens: SUPERVISOR_MAX_TOKENS,
-  });
-  const system = await loadPrompt(sb, "supervisor", SUPERVISOR_SYSTEM);
-  const res = await loggedLlm(sb, { ...logCtx, agent_name: "supervisor", input_snapshot: userMsg }, () =>
-    callClaude({
-      model: route.model,
-      system,
-      messages: [{ role: "user", content: userMsg }],
-      maxTokens: route.maxTokens,
-      temperature: route.temperature,
-    }),
-  );
-
-  try {
-    return parseJsonFromModel<SynthesisBrief>(res.text);
-  } catch {
-    // Defensive fallback: a minimal brief so the Drafter can still run on raw caches.
-    return {
-      summary: "Synthesis unavailable; drafting from raw module caches.",
-      market_position: "",
-      top_threats: [],
-      top_opportunities: [],
-      notable_competitor_moves: [],
-      regulatory_flags: [],
-      modules_covered: Object.keys(ctx.caches).filter((k) => (ctx.caches[k] ?? []).length),
-    };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 3. Drafter (Five-Question filter, ≤2 retries to reach ≥4 valid recs)
-// ---------------------------------------------------------------------------
-
-async function runDrafter(
+async function runSynthesis(
   sb: SupabaseClient,
   logCtx: LogCtx,
   ctx: Ctx,
-  brief: SynthesisBrief,
-): Promise<DraftRecommendation[]> {
-  const prevList = ctx.prevHeadlines.length
-    ? ctx.prevHeadlines.map((h) => `- ${h}`).join("\n")
-    : "- (none)";
-  const system = renderPrompt(await loadPrompt(sb, "drafter", DRAFTER_SYSTEM_TEMPLATE), {
+): Promise<{ brief: SynthesisBrief; recommendations: FinalRecommendation[] }> {
+  const prevList = ctx.prevHeadlines.length ? ctx.prevHeadlines.map((h) => `- ${h}`).join("\n") : "- (none)";
+  const system = renderPrompt(await loadPrompt(sb, "synthesis", SYNTHESIS_SYSTEM), {
     prev_headlines: prevList,
   });
-  const baseUser = [
+  const user = [
     brandHeader(ctx),
-    "",
-    "Supervisor brief:",
-    JSON.stringify(brief).slice(0, 2500),
     "",
     memoryBlock(ctx),
     "",
     "Raw module intelligence (cite REAL source_url + extracted_text + timestamp from these rows):",
     buildModuleDigest(ctx),
     "",
-    // Force JSON-only output. This model does not support assistant prefill, so the
-    // instruction itself must be unambiguous — otherwise the Drafter sometimes
-    // "thinks out loud" in prose, burns the token budget, and returns nothing
-    // parseable (0 recs). Mirrors how the Supervisor/Auditor reliably emit JSON.
-    "OUTPUT FORMAT: respond with ONLY a JSON array of 4–8 recommendation objects. " +
-      "Your reply MUST start with '[' and end with ']'. Do NOT write any reasoning, " +
-      "preamble, explanation, or markdown code fences before or after the JSON. " +
-      "Drop any recommendation that fails the Five-Question filter.",
+    "OUTPUT FORMAT: respond with ONLY a JSON object { brief, recommendations }. " +
+      "Your reply MUST start with '{' and end with '}'. No reasoning, preamble, or " +
+      "markdown fences. Drop any recommendation that fails the Five-Question filter.",
   ].join("\n");
 
-  const route = await resolveRoute(sb, "drafting", {
+  const route = await resolveRoute(sb, "synthesis", {
     model: MODELS.sonnet,
     temperature: 0.3,
-    maxTokens: DRAFTER_MAX_TOKENS,
+    maxTokens: SYNTHESIS_MAX_TOKENS,
   });
-  let valid: DraftRecommendation[] = [];
-  for (let attempt = 0; attempt <= 2; attempt++) {
-    const user =
-      attempt === 0
-        ? baseUser
-        : `${baseUser}\n\nPrevious attempt returned only ${valid.length} valid recommendations. Return at least 4 fully evidence-backed recommendations.`;
+  const res = await loggedLlm(sb, { ...logCtx, agent_name: "synthesis", input_snapshot: user }, () =>
+    callClaude({
+      model: route.model,
+      system,
+      messages: [{ role: "user", content: user }],
+      maxTokens: route.maxTokens,
+      temperature: route.temperature,
+      cacheControl: "ephemeral",
+    }),
+  );
 
-    const res = await loggedLlm(
-      sb,
-      { ...logCtx, agent_name: "drafter", retry_count: attempt, input_snapshot: attempt === 0 ? user : "(retry)" },
-      () =>
-        callClaude({
-          model: route.model,
-          system,
-          messages: [{ role: "user", content: user }],
-          maxTokens: route.maxTokens,
-          temperature: route.temperature,
-        }),
-    );
-
-    let parsed: DraftRecommendation[] = [];
-    try {
-      parsed = parseJsonFromModel<DraftRecommendation[]>(res.text);
-    } catch {
-      parsed = [];
-    }
-    valid = parsed.filter((r) => passesFiveQuestion(r, ctx.prevHeadlines));
-    if (valid.length >= 4) break;
+  let out: SynthesisOutput | null = null;
+  try {
+    out = parseJsonFromModel<SynthesisOutput>(res.text);
+  } catch {
+    out = null;
   }
 
-  // Cap at 8 (quality bar = 4–8). If still <4, return what we have — the Auditor
-  // and cache-population handle a thin plan; partial scans can legitimately be short.
-  return valid.slice(0, 8);
+  const brief: SynthesisBrief = out?.brief ?? {
+    summary: "Synthesis unavailable this week.",
+    market_position: "",
+    top_threats: [],
+    top_opportunities: [],
+    notable_competitor_moves: [],
+    regulatory_flags: [],
+    modules_covered: Object.keys(ctx.caches).filter((k) => (ctx.caches[k] ?? []).length),
+  };
+
+  const raw = Array.isArray(out?.recommendations) ? out!.recommendations : [];
+  // Deterministic guardrails (the model does not get the last word):
+  //  - Five-Question filter keeps only real-evidence, non-duplicate recs.
+  //  - score→level bucketing + URGENT gating stay in code.
+  const recommendations = raw
+    .filter((r) => passesFiveQuestion(r, ctx.prevHeadlines))
+    .slice(0, 8)
+    .map((r) => finalise(r));
+
+  return { brief, recommendations };
+}
+
+// Apply confidence bucketing + URGENT gating to one guardrail-passed rec.
+function finalise(r: SynthesisRecommendation): FinalRecommendation {
+  const score = clamp01(Number(r.confidence_score));
+  const level = levelFromScore(score);
+  // URGENT gating: only allow 'urgent' when level is 'high' AND direct evidence.
+  const urgency =
+    r.urgency === "urgent" && !(level === "high" && r.is_direct_evidence === true) ? "watch" : r.urgency;
+  return {
+    urgency,
+    category: r.category,
+    headline: r.headline,
+    trigger_reason: r.trigger_reason,
+    evidence: r.evidence,
+    assumption_flags: r.assumption_flags ?? [],
+    is_direct_evidence: r.is_direct_evidence === true,
+    confidence_score: round2(score),
+    confidence_level: level,
+  };
 }
 
 // Five-Question filter: specific, evidence-backed, actionable, time-bound,
@@ -459,90 +419,6 @@ function passesFiveQuestion(r: DraftRecommendation, prevHeadlines: string[]): bo
   if (!Array.isArray(r.assumption_flags)) r.assumption_flags = [];
   if (typeof r.is_direct_evidence !== "boolean") r.is_direct_evidence = false;
   return true;
-}
-
-// ---------------------------------------------------------------------------
-// 4. Auditor (rubric → confidence, URGENT gating, ≤1 rewrite, reject below floor)
-// ---------------------------------------------------------------------------
-
-async function runAuditor(
-  sb: SupabaseClient,
-  logCtx: LogCtx,
-  ctx: Ctx,
-  drafted: DraftRecommendation[],
-): Promise<FinalRecommendation[]> {
-  if (drafted.length === 0) return [];
-
-  const user = [
-    brandHeader(ctx),
-    "",
-    "Score each recommendation in this array (index = array position):",
-    JSON.stringify(
-      drafted.map((r, i) => ({ index: i, urgency: r.urgency, headline: r.headline, trigger_reason: r.trigger_reason, evidence: r.evidence, is_direct_evidence: r.is_direct_evidence })),
-    ).slice(0, 6000),
-  ].join("\n");
-
-  const route = await resolveRoute(sb, "audit", {
-    model: MODELS.sonnet,
-    temperature: 0.3,
-    maxTokens: AUDITOR_MAX_TOKENS,
-  });
-  const auditorSystem = await loadPrompt(sb, "auditor", AUDITOR_SYSTEM);
-  let verdicts: AuditVerdict[] = [];
-  for (let attempt = 0; attempt <= 1; attempt++) {
-    const res = await loggedLlm(
-      sb,
-      { ...logCtx, agent_name: "auditor", retry_count: attempt, input_snapshot: attempt === 0 ? user : "(rewrite)" },
-      () =>
-        callClaude({
-          model: route.model,
-          system: auditorSystem,
-          messages: [{ role: "user", content: user }],
-          maxTokens: route.maxTokens,
-          temperature: route.temperature,
-        }),
-    );
-    try {
-      verdicts = parseJsonFromModel<AuditVerdict[]>(res.text);
-    } catch {
-      verdicts = [];
-    }
-    // One rewrite allowed: if the auditor returned nothing usable, retry once.
-    if (verdicts.length > 0) break;
-  }
-
-  const byIndex = new Map<number, AuditVerdict>();
-  for (const v of verdicts) if (typeof v?.index === "number") byIndex.set(v.index, v);
-
-  return drafted.map((r, i): FinalRecommendation => {
-    const v = byIndex.get(i);
-    // No verdict for a rec → conservative default (still passed Drafter filter).
-    let score = v ? clamp01(Number(v.confidence_score)) : 0.55;
-    const auditorRejected = v ? v.keep === false : false;
-    if (auditorRejected) score = Math.min(score, CONFIDENCE_FLOOR - 0.01);
-
-    let level = levelFromScore(score);
-    let urgency = r.urgency;
-
-    // URGENT gating: only allow 'urgent' when level is 'high' AND direct evidence.
-    if (urgency === "urgent" && !(level === "high" && r.is_direct_evidence === true)) {
-      urgency = "watch";
-    }
-
-    const headline = v?.revised_headline && v.revised_headline.trim().length >= 12 ? v.revised_headline.trim() : r.headline;
-
-    return {
-      urgency,
-      category: r.category,
-      headline,
-      trigger_reason: r.trigger_reason,
-      evidence: r.evidence,
-      assumption_flags: r.assumption_flags ?? [],
-      is_direct_evidence: r.is_direct_evidence === true,
-      confidence_score: round2(score),
-      confidence_level: level,
-    };
-  });
 }
 
 function clamp01(n: number): number {
