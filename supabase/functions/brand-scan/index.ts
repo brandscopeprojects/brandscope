@@ -109,6 +109,40 @@ Deno.serve(async (req) => {
       return json({ error: `scan job not found: ${jobError?.message ?? "missing"}` }, 404);
     }
 
+    // 1a. WEEKLY DEDUP GATE (Task 3): check if this brand was already scanned this week.
+    // Query weekly_cache for an existing record created in the current calendar week.
+    // If found and force_refresh is false, skip the expensive DataForSEO calls and
+    // return immediately (recommendation cache will be served from the earlier scan).
+    if (!forceRefresh) {
+      const weekStart = new Date(job.scan_week);
+      weekStart.setDate(weekStart.getDate()); // scan_week is already Monday
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+
+      const { count: cacheCount } = await sb
+        .from("weekly_cache")
+        .select("id", { count: "exact", head: true })
+        .eq("brand_id", brandId)
+        .gte("created_at", weekStart.toISOString())
+        .lt("created_at", weekEnd.toISOString());
+
+      if ((cacheCount ?? 0) > 0) {
+        // Cache already exists for this week — skip researchers entirely
+        await setScanStatus(sb, scanJobId, "completed", {
+          error_message: null,
+          progress_percentage: 100,
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        return json({
+          ok: true,
+          status: "skipped",
+          reason: "already_scanned_this_week",
+          message: "Weekly cache already exists; skipping researchers",
+        });
+      }
+    }
+
     // 1b. Load the brand.
     const { data: brand, error: brandError } = await sb
       .from("brands")
