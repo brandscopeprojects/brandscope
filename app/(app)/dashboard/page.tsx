@@ -10,9 +10,10 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getCurrentBrand, getDashboardData } from "@/lib/data/dashboard";
+import { createClient } from "@/lib/supabase/server";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { DashboardView } from "@/components/dashboard/DashboardView";
-import { EmptyState } from "@/components/intelligence/EmptyState";
+import { ScanProgress } from "@/components/dashboard/ScanProgress";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +25,17 @@ export default async function DashboardPage() {
 
   const data = await getDashboardData(brand);
 
-  // --- Pre-first-scan empty state (scan_jobs row is pending) ---
+  // --- Scan running or pending: show progress ---
   if (!data) {
+    const supabase = createClient();
+    const { data: latestScan } = await supabase
+      .from("scan_jobs")
+      .select("id, status")
+      .eq("brand_id", brand.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
     return (
       <div className="space-y-8">
         <DashboardHeader
@@ -34,10 +44,9 @@ export default async function DashboardPage() {
           scanWeek={null}
           aiVisibility={{ score: null, trend: null }}
         />
-        <EmptyState
-          title="Your first scan is running"
-          message={`We're analysing ${brand.name} against your competitors across promotions, traffic, SEO, regulatory and AI visibility. Your evidence-backed action plan will appear here as soon as the weekly scan completes.`}
-        />
+        {latestScan && (latestScan.status === "running" || latestScan.status === "pending") ? (
+          <ScanProgress scanJobId={latestScan.id} brandName={brand.name} />
+        ) : null}
       </div>
     );
   }
