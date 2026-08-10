@@ -25,18 +25,28 @@ export function RealtimeDataBanner({
     let channel: RealtimeChannel | null = null;
     let autoRefreshTimer: NodeJS.Timeout | null = null;
 
+    // tech_stack_cache has no brand_id column — it is keyed by competitor_id.
+    // Subscribing with a brand_id filter there errors out, so we subscribe to
+    // the table unfiltered (RLS scopes rows to the signed-in brand) and narrow
+    // by scan_week in the handler.
+    const hasBrandId = tableName !== "tech_stack_cache";
+
     const setup = async () => {
       try {
+        const changeConfig = hasBrandId
+          ? {
+              event: "*" as const,
+              schema: "public",
+              table: tableName,
+              filter: `brand_id=eq.${brandId}`,
+            }
+          : { event: "*" as const, schema: "public", table: tableName };
+
         channel = supabase
           .channel(`${tableName}:${brandId}:${scanWeek}:banner`)
           .on(
             "postgres_changes",
-            {
-              event: "*",
-              schema: "public",
-              table: tableName,
-              filter: `brand_id=eq.${brandId}`,
-            },
+            changeConfig,
             (payload) => {
               const record = payload.new || payload.old;
               if (record && (record as any).scan_week === scanWeek) {
