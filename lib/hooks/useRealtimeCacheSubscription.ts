@@ -86,7 +86,7 @@ export function useRealtimeCacheSubscription<T>({
         supabase.removeChannel(channel);
       }
     };
-  }, [tableName, brandId, scanWeek, competitorId, supabase]);
+  }, [tableName, brandId, scanWeek, competitorId]);
 
   return { data, isLoading, error };
 }

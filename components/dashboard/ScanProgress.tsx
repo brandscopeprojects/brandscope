@@ -70,7 +70,7 @@ export function ScanProgress({ scanJobId, brandName }: { scanJobId: string; bran
         supabase.removeChannel(channel);
       }
     };
-  }, [scanJobId, supabase]);
+  }, [scanJobId]);
 
   if (!job) {
     return (

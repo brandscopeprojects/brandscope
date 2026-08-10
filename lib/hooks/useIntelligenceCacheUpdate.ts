@@ -56,7 +56,7 @@ export function useIntelligenceCacheUpdate({
         supabase.removeChannel(channel);
       }
     };
-  }, [tableName, brandId, scanWeek, supabase, onUpdate]);
+  }, [tableName, brandId, scanWeek, onUpdate]);
 
   const reloadPage = async () => {
     setIsReloading(true);

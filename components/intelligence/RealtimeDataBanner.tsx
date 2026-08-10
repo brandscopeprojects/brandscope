@@ -67,7 +67,7 @@ export function RealtimeDataBanner({
         clearTimeout(autoRefreshTimer);
       }
     };
-  }, [tableName, brandId, scanWeek, supabase, autoRefreshDelay]);
+  }, [tableName, brandId, scanWeek, autoRefreshDelay]);
 
   if (!hasUpdate) return null;
 
