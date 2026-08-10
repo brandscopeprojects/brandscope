@@ -22,6 +22,7 @@ import { withMeter, setMeterCtx } from "../_shared/spend.ts";
 import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/scan.ts";
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { type ScanModuleMessage } from "../_shared/contracts.ts";
+import { generateSynthesisSummary } from "../_shared/researcher-summarizer.ts";
 import { activeDocumentsForMarket } from "./rag.ts";
 import { fetchRegulatoryNews, type NewsItem } from "./change-detection.ts";
 import { assessCompetitor, computeScore, buildViolations, buildRequirements, statusColumns } from "./scoring.ts";
@@ -114,6 +115,21 @@ Deno.serve(withMeter(async (req) => {
         const violations = buildViolations(assessments);
         const cols = statusColumns(assessments);
 
+        // Generate synthesis summary before upserting
+        const synthesis_summary = await generateSynthesisSummary(
+          sb,
+          "Regulatory Compliance",
+          JSON.stringify({
+            compliance_score: score,
+            violations: violations,
+            market,
+            assessed_with_corpus: usedCorpus,
+            news_headlines: news.slice(0, 5).map((n: NewsItem) => n.title),
+          }, null, 2),
+          msg.scan_job_id,
+          msg.brand_id,
+        );
+
         // ── 5. UPSERT regulatory_cache (scoped to this brand) ──
         const { error: upsertErr } = await sb.from("regulatory_cache").upsert(
           {
@@ -138,6 +154,7 @@ Deno.serve(withMeter(async (req) => {
                 date: n.datePublished,
               })),
             } as unknown as never,
+            synthesis_summary,
           },
           { onConflict: "brand_id,scan_week,competitor_id,market" },
         );

@@ -25,16 +25,34 @@ export default async function DashboardPage() {
 
   const data = await getDashboardData(brand);
 
-  // --- Scan running or pending: show progress ---
+  // --- Scan running or pending: show progress + real-time module sections ---
   if (!data) {
     const supabase = createClient();
     const { data: latestScan } = await supabase
       .from("scan_jobs")
-      .select("id, status")
+      .select("id, status, scan_week")
       .eq("brand_id", brand.id)
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
+
+    if (latestScan && (latestScan.status === "running" || latestScan.status === "pending")) {
+      // Dynamic import for client-only component
+      const { ModuleStreamingView } = await import("@/components/dashboard/ModuleStreamingView");
+
+      return (
+        <div className="space-y-8">
+          <DashboardHeader
+            brandName={brand.name}
+            markets={brand.market}
+            scanWeek={null}
+            aiVisibility={{ score: null, trend: null }}
+          />
+          <ScanProgress scanJobId={latestScan.id} brandName={brand.name} />
+          <ModuleStreamingView brandId={brand.id} scanWeek={latestScan.scan_week} />
+        </div>
+      );
+    }
 
     return (
       <div className="space-y-8">
@@ -44,9 +62,6 @@ export default async function DashboardPage() {
           scanWeek={null}
           aiVisibility={{ score: null, trend: null }}
         />
-        {latestScan && (latestScan.status === "running" || latestScan.status === "pending") ? (
-          <ScanProgress scanJobId={latestScan.id} brandName={brand.name} />
-        ) : null}
       </div>
     );
   }

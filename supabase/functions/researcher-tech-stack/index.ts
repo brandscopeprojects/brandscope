@@ -24,6 +24,7 @@ import {
   type ScanSynthesisMessage,
 } from "../_shared/contracts.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
+import { generateSynthesisSummary } from "../_shared/researcher-summarizer.ts";
 
 const MODULE_BUDGET_MS = 90_000; // data-flow-rules.md §4 per-module timeout.
 
@@ -139,6 +140,15 @@ async function processCompetitor(
       changes = diffTechnologies(prevNames, allTechNames(result), detectedAt);
     }
 
+    // 4. Generate synthesis summary before upserting
+    const synthesis_summary = await generateSynthesisSummary(
+      sb,
+      "Tech Stack",
+      JSON.stringify({ technologies: result.technologies, changes, spend_intensity: spendIntensity }, null, 2),
+      msg.scan_job_id,
+      msg.brand_id,
+    );
+
     // 4. UPSERT tech_stack_cache (onConflict competitor_id,scan_week — NO brand_id).
     // spend_intensity has no dedicated column → stored inside raw_response (a real
     // computed value alongside the raw API payload, per data-flow-rules §2 evidence).
@@ -162,6 +172,7 @@ async function processCompetitor(
             spend_intensity: spendIntensity, // computed signal (0–100), not money
             api: result.raw,
           } as unknown as Record<string, unknown>,
+          synthesis_summary,
         },
         { onConflict: "competitor_id,scan_week" },
       );

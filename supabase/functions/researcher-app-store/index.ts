@@ -23,6 +23,7 @@ import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/sca
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { type ScanModuleMessage, type CompetitorRef } from "../_shared/contracts.ts";
 import { languageCode } from "../_shared/dataforseo.ts";
+import { generateSynthesisSummary } from "../_shared/researcher-summarizer.ts";
 import {
   guessPackageIds,
   fetchGoogleAppInfo,
@@ -185,6 +186,20 @@ async function processCompetitor(
     productExtract.sports_betting_status,
   );
 
+  // 4. Generate synthesis summary before upserting
+  const synthesis_summary = await generateSynthesisSummary(
+    sb,
+    "App Store / Product Intel",
+    JSON.stringify({
+      sports_betting_status: productExtract.sports_betting_status,
+      app_rating: info?.rating ?? null,
+      odds_score: oddsScore,
+      vertical_keywords: verticalKeywords.slice(0, 10),
+    }, null, 2),
+    msg.scan_job_id,
+    msg.brand_id,
+  );
+
   // 4. UPSERT product_intel_cache (this researcher OWNS this table).
   const { error: prodErr } = await sb
     .from("product_intel_cache")
@@ -209,6 +224,7 @@ async function processCompetitor(
           vertical_keywords: verticalKeywords.slice(0, 50),
           new_feature_mentions: reviewExtract.new_feature_mentions,
         } as unknown,
+        synthesis_summary,
       },
       { onConflict: "brand_id,scan_week,competitor_id" },
     );

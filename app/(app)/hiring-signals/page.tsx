@@ -15,6 +15,7 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/intelligence/PageHeader";
 import { EmptyState } from "@/components/intelligence/EmptyState";
+import { RealtimeDataBanner } from "@/components/intelligence/RealtimeDataBanner";
 import { StatStrip, type Stat } from "@/components/intelligence/StatStrip";
 import { HiringSignalPanel } from "@/components/intelligence/HiringSignalPanel";
 import { HiringTimeline } from "@/components/intelligence/HiringTimeline";
@@ -64,6 +65,13 @@ export default async function HiringSignalsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Hiring & Signals" subtitle={SUBTITLE} scanWeek={scanWeek} />
+
+      <RealtimeDataBanner
+        tableName="hiring_signals_cache"
+        brandId={brand.id}
+        scanWeek={scanWeek}
+        autoRefreshDelay={3000}
+      />
 
       <StatStrip stats={stats} />
 

@@ -15,6 +15,7 @@ import { getCurrentBrand } from "@/lib/data/brand";
 import { getCustomerIntelData } from "@/lib/data/customers";
 import { PageHeader } from "@/components/intelligence/PageHeader";
 import { EmptyState } from "@/components/intelligence/EmptyState";
+import { RealtimeDataBanner } from "@/components/intelligence/RealtimeDataBanner";
 import { StatStrip, type Stat } from "@/components/intelligence/StatStrip";
 import { CustomersComplaintThemes } from "@/components/intelligence/CustomersComplaintThemes";
 import { CustomersTrafficSources } from "@/components/intelligence/CustomersTrafficSources";
@@ -115,6 +116,13 @@ export default async function CustomersPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Customer Intelligence" subtitle={SUBTITLE} scanWeek={scanWeek} />
+
+      <RealtimeDataBanner
+        tableName="customer_intel_cache"
+        brandId={brand.id}
+        scanWeek={scanWeek}
+        autoRefreshDelay={3000}
+      />
 
       <StatStrip stats={stats} />
 

@@ -1,17 +1,7 @@
-// Traffic & SEO Intelligence — Screen 7 (`/traffic-seo`). Reads the per-competitor
-// `seo_cache` (DataForSEO Labs, cron-populated) for the latest scan_week and lays
-// out: headline stats, a competitor comparison table (domain authority, traffic
-// mix), the top keyword gaps across competitors, and a traffic bar chart.
-//
-// Auth + brand gating + the shell live in app/(app)/layout.tsx. Before the first
-// scan populates seo_cache, we render the honest "scanning" empty state — never
-// fabricated numbers (CLAUDE.md: no fake data inside a v1 page).
+"use client";
 
-import { getCurrentBrand } from "@/lib/data/brand";
-import { getTrafficSeoData } from "@/lib/data/traffic-seo";
-import { PageHeader } from "@/components/intelligence/PageHeader";
-import { EmptyState } from "@/components/intelligence/EmptyState";
-import { RealtimeDataBanner } from "@/components/intelligence/RealtimeDataBanner";
+import { useEffect, useState } from "react";
+import { useRealtimeCacheSubscription } from "@/lib/hooks/useRealtimeCacheSubscription";
 import { StatStrip, type Stat } from "@/components/intelligence/StatStrip";
 import { DataTable, type Column } from "@/components/intelligence/DataTable";
 import { TierBadge } from "@/components/intelligence/TierBadge";
@@ -19,10 +9,13 @@ import { KeywordLandscape } from "@/components/intelligence/KeywordLandscape";
 import { SeoTrafficChart } from "@/components/intelligence/SeoTrafficChart";
 import type { CompetitorSeo } from "@/lib/data/traffic-seo";
 
-export const dynamic = "force-dynamic";
-
-const SUBTITLE =
-  "The most-searched betting terms in this market, and where you rank vs your competitors — from live Google results.";
+interface TrafficSeoRealtimeProps {
+  brandId: string;
+  scanWeek: string;
+  initialCompetitors?: CompetitorSeo[];
+  initialKeywordGaps?: any[];
+  initialLandscape?: any[];
+}
 
 const COMPETITOR_COLUMNS: Column<CompetitorSeo>[] = [
   {
@@ -67,8 +60,6 @@ const COMPETITOR_COLUMNS: Column<CompetitorSeo>[] = [
   },
 ];
 
-/** Always-visible "how to read this" legend (works on mobile, unlike header
- *  hover-hints). Compact definition list in the muted secondary zone. */
 function Legend({ items }: { items: { term: string; def: string }[] }) {
   return (
     <dl className="flex flex-wrap gap-x-6 gap-y-1.5 rounded-chip border border-divider bg-base-secondary/60 px-4 py-3 text-xs leading-relaxed text-ink-secondary">
@@ -102,32 +93,32 @@ function SectionCard({
   );
 }
 
-export default async function TrafficSeoPage() {
-  const brand = await getCurrentBrand();
-  // Layout already redirects when there's no brand; this satisfies the type and
-  // guards a direct render.
-  if (!brand) return null;
+export function TrafficSeoRealtime({
+  brandId,
+  scanWeek,
+  initialCompetitors,
+  initialKeywordGaps,
+  initialLandscape,
+}: TrafficSeoRealtimeProps) {
+  const [competitors, setCompetitors] = useState<CompetitorSeo[]>(initialCompetitors || []);
+  const [keywordGaps, setKeywordGaps] = useState(initialKeywordGaps || []);
+  const [landscape, setLandscape] = useState(initialLandscape || []);
 
-  const data = await getTrafficSeoData(brand);
+  const { data: seoData } = useRealtimeCacheSubscription({
+    tableName: "seo_cache",
+    brandId,
+    scanWeek,
+  });
 
-  if (!data) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Traffic & SEO Intelligence" subtitle={SUBTITLE} />
-        <EmptyState
-          title="No SEO data yet"
-          message="Your first weekly scan will populate domain authority, traffic and keyword gaps from DataForSEO."
-          intent="scanning"
-        />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (seoData) {
+      setCompetitors((seoData as any).competitors || initialCompetitors || []);
+      setKeywordGaps((seoData as any).keywordGaps || initialKeywordGaps || []);
+      setLandscape((seoData as any).landscape || initialLandscape || []);
+    }
+  }, [seoData, initialCompetitors, initialKeywordGaps, initialLandscape]);
 
-  const { scanWeek, competitors, keywordGaps, landscape } = data;
-  // Rivals only (exclude the synthetic "you" row) for field-level stats.
   const rivals = competitors.filter((c) => !c.isOwnBrand);
-
-  // Headline stats — real, derivable values only.
   const withVisibility = rivals.filter((c) => c.domainAuthority != null);
   const avgVisibility =
     withVisibility.length > 0
@@ -136,6 +127,7 @@ export default async function TrafficSeoPage() {
             withVisibility.length,
         )
       : null;
+
   const stats: Stat[] = [
     { label: "Competitors tracked", value: rivals.length },
     { label: "Keyword gaps found", value: keywordGaps.length },
@@ -146,22 +138,10 @@ export default async function TrafficSeoPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Traffic & SEO Intelligence" subtitle={SUBTITLE} scanWeek={scanWeek} />
-
-      <RealtimeDataBanner
-        tableName="seo_cache"
-        brandId={brand.id}
-        scanWeek={scanWeek}
-        autoRefreshDelay={3000}
-      />
-
+    <>
       <StatStrip stats={stats} />
 
       {withVisibility.length === 0 && rivals.length > 0 && (
-        // Honest coverage note (ui-constraints §14): the live-SERP sweep returned no
-        // results for any tracked competitor this week. Rare — a brand-new market or
-        // a transient SERP miss. Dashes without an explanation read as "broken".
         <div className="rounded-chip border border-watch/30 bg-watch/10 px-4 py-3 text-xs leading-relaxed text-ink-secondary">
           No live Google results came back for these competitors on this market&rsquo;s
           keyword set this week — this can happen for a brand-new market or a transient
@@ -216,6 +196,6 @@ export default async function TrafficSeoPage() {
           ]}
         />
       </SectionCard>
-    </div>
+    </>
   );
 }

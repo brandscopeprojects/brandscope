@@ -15,6 +15,7 @@ import { getCurrentBrand } from "@/lib/data/brand";
 import { getPromotionsData } from "@/lib/data/promotions";
 import { PageHeader } from "@/components/intelligence/PageHeader";
 import { EmptyState } from "@/components/intelligence/EmptyState";
+import { RealtimeDataBanner } from "@/components/intelligence/RealtimeDataBanner";
 import { StatStrip, type Stat } from "@/components/intelligence/StatStrip";
 import { PromotionsSignalsTable } from "@/components/intelligence/PromotionsSignalsTable";
 
@@ -55,6 +56,13 @@ export default async function PromotionsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Promotion Signals" subtitle={SUBTITLE} scanWeek={scanWeek} />
+
+      <RealtimeDataBanner
+        tableName="promotions_cache"
+        brandId={brand.id}
+        scanWeek={scanWeek}
+        autoRefreshDelay={3000}
+      />
 
       <StatStrip stats={stats} />
 

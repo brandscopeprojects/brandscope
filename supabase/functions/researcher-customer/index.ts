@@ -44,6 +44,7 @@ import {
 } from "./dataforseo-customer.ts";
 import { inferCustomerIntel } from "./infer.ts";
 import type { CustomerInference } from "./types.ts";
+import { generateSynthesisSummary } from "../_shared/researcher-summarizer.ts";
 
 const MODULE_BUDGET_MS = 90_000;
 const SYNTHESIS_FN = "synthesis-draft-audit";
@@ -191,6 +192,20 @@ async function upsertCustomerRow(
   if (!existingHasComplaints && result.inference.complaint_themes.length > 0) {
     payload.complaint_themes = result.inference.complaint_themes;
   }
+
+  // Generate synthesis summary before upserting
+  const synthesis_summary = await generateSynthesisSummary(
+    sb,
+    "Customer Intelligence",
+    JSON.stringify({
+      traffic_sources: result.inference.traffic_sources,
+      sentiment_score: result.inference.sentiment_score,
+      complaint_themes: result.inference.complaint_themes,
+    }, null, 2),
+    msg.scan_job_id,
+    msg.brand_id,
+  );
+  payload.synthesis_summary = synthesis_summary;
 
   const { error } = await sb
     .from("customer_intel_cache")

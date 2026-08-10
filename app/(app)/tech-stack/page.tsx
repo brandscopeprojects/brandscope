@@ -12,11 +12,13 @@
 
 import { PageHeader } from "@/components/intelligence/PageHeader";
 import { EmptyState } from "@/components/intelligence/EmptyState";
+import { RealtimeDataBanner } from "@/components/intelligence/RealtimeDataBanner";
 import { StatStrip, type Stat } from "@/components/intelligence/StatStrip";
 import { TechStackAdNetworkTable } from "@/components/intelligence/TechStackAdNetworkTable";
 import { TechStackTable } from "@/components/intelligence/TechStackTable";
 import { TechStackChangesFeed } from "@/components/intelligence/TechStackChangesFeed";
 import { getTechStackData } from "@/lib/data/tech-stack";
+import { getCurrentBrand } from "@/lib/data/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,7 @@ const SUBTITLE =
   "Ad networks, analytics, payment and CRM technologies detected across your competitors (DetectZeStack).";
 
 export default async function TechStackPage() {
+  const brand = await getCurrentBrand();
   const data = await getTechStackData();
 
   if (!data) {
@@ -56,6 +59,15 @@ export default async function TechStackPage() {
         subtitle={SUBTITLE}
         scanWeek={scanWeek}
       />
+
+      {brand && (
+        <RealtimeDataBanner
+          tableName="tech_stack_cache"
+          brandId={brand.id}
+          scanWeek={scanWeek}
+          autoRefreshDelay={3000}
+        />
+      )}
 
       <StatStrip stats={stats} />
 
