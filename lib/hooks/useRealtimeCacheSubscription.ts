@@ -2,13 +2,24 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
+type CacheTableName =
+  | "seo_cache"
+  | "geo_cache"
+  | "tech_stack_cache"
+  | "product_intel_cache"
+  | "customer_intel_cache"
+  | "regulatory_cache"
+  | "promotions_cache"
+  | "hiring_signals_cache"
+  | "weekly_cache";
+
 export function useRealtimeCacheSubscription<T>({
   tableName,
   brandId,
   scanWeek,
   competitorId,
 }: {
-  tableName: string;
+  tableName: CacheTableName;
   brandId: string;
   scanWeek?: string;
   competitorId?: string;
@@ -23,8 +34,8 @@ export function useRealtimeCacheSubscription<T>({
 
     const setup = async () => {
       try {
-        // Initial query
-        let query = supabase.from(tableName).select("*").eq("brand_id", brandId);
+        // Initial query - cast to any to bypass Supabase's strict typing
+        let query = (supabase.from(tableName) as any).select("*").eq("brand_id", brandId);
 
         if (scanWeek) query = query.eq("scan_week", scanWeek);
         if (competitorId) query = query.eq("competitor_id", competitorId);

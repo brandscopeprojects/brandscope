@@ -30,8 +30,8 @@ export async function GET(
     let completedModules: string[] = [];
     if (job.completed_steps) {
       try {
-        const steps = JSON.parse(job.completed_steps as string);
-        completedModules = Object.entries(steps)
+        const steps = JSON.parse(job.completed_steps as unknown as string);
+        completedModules = (Object.entries(steps) as Array<[string, unknown]>)
           .filter(([_, v]) => v === "ok" || v === "partial")
           .map(([k]) => k);
       } catch {
