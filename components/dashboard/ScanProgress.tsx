@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 
 type ScanJob = Database["public"]["Tables"]["scan_jobs"]["Row"];
@@ -19,34 +21,56 @@ const MODULE_LABELS: Record<string, string> = {
 export function ScanProgress({ scanJobId, brandName }: { scanJobId: string; brandName: string }) {
   const [job, setJob] = useState<ScanJob | null>(null);
   const [completedModules, setCompletedModules] = useState<Set<string>>(new Set());
-  const [isPolling, setIsPolling] = useState(true);
+  const supabase = createClient();
 
   useEffect(() => {
-    if (!isPolling) return;
+    let channel: RealtimeChannel | null = null;
 
-    const poll = async () => {
+    const setup = async () => {
       try {
-        const res = await fetch(`/api/scan/${scanJobId}/progress`);
-        if (res.ok) {
-          const data = await res.json();
-          setJob(data.job);
-          setCompletedModules(new Set(data.completedModules));
+        // Initial query
+        const { data: initialJob } = await supabase
+          .from("scan_jobs")
+          .select("*")
+          .eq("id", scanJobId)
+          .single();
 
-          // Stop polling if scan is done
-          if (data.job.status !== "running") {
-            setIsPolling(false);
-          }
+        if (initialJob) {
+          setJob(initialJob);
+          setCompletedModules(new Set(initialJob.completed_steps || []));
         }
-      } catch (e) {
-        console.error("Progress poll error:", e);
+
+        // Subscribe to realtime updates
+        channel = supabase
+          .channel(`scan_jobs:${scanJobId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "UPDATE",
+              schema: "public",
+              table: "scan_jobs",
+              filter: `id=eq.${scanJobId}`,
+            },
+            (payload) => {
+              const updated = payload.new as ScanJob;
+              setJob(updated);
+              setCompletedModules(new Set(updated.completed_steps || []));
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.error("Setup error:", err);
       }
     };
 
-    const interval = setInterval(poll, 2000);
-    poll(); // immediate first call
+    setup();
 
-    return () => clearInterval(interval);
-  }, [scanJobId, isPolling]);
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [scanJobId, supabase]);
 
   if (!job) {
     return (
