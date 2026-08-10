@@ -12,8 +12,10 @@
 
 import { PageHeader } from "@/components/intelligence/PageHeader";
 import { EmptyState } from "@/components/intelligence/EmptyState";
+import { RealtimeDataBanner } from "@/components/intelligence/RealtimeDataBanner";
 import { SocialAdsNetworkTable } from "@/components/intelligence/SocialAdsNetworkTable";
 import { getSocialAdsData } from "@/lib/data/social-ads";
+import { getCurrentBrand } from "@/lib/data/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -21,11 +23,21 @@ const SUBTITLE =
   "Ad-network presence today; full social intelligence is coming in a later phase.";
 
 export default async function SocialAdsPage() {
+  const brand = await getCurrentBrand();
   const data = await getSocialAdsData();
 
   return (
     <div className="space-y-6">
       <PageHeader title="Social & Ads" subtitle={SUBTITLE} scanWeek={data?.scanWeek ?? null} />
+
+      {data && brand && (
+        <RealtimeDataBanner
+          tableName="tech_stack_cache"
+          brandId={brand.id}
+          scanWeek={data.scanWeek}
+          autoRefreshDelay={3000}
+        />
+      )}
 
       <section className="space-y-3">
         <EmptyState

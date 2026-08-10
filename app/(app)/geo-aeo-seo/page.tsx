@@ -7,6 +7,7 @@
 import { getCurrentBrand, getGeoData } from "@/lib/data/geo";
 import { PageHeader } from "@/components/intelligence/PageHeader";
 import { EmptyState } from "@/components/intelligence/EmptyState";
+import { RealtimeDataBanner } from "@/components/intelligence/RealtimeDataBanner";
 import { GeoAIVisibilityScore } from "@/components/intelligence/GeoAIVisibilityScore";
 import { GeoPlatformBreakdownTable } from "@/components/intelligence/GeoPlatformBreakdownTable";
 import { GeoCompetitorScores } from "@/components/intelligence/GeoCompetitorScores";
@@ -40,6 +41,13 @@ export default async function GeoAeoSeoPage() {
         title="GEO / AEO / SEO Visibility"
         subtitle={SUBTITLE}
         scanWeek={geo.scanWeek}
+      />
+
+      <RealtimeDataBanner
+        tableName="geo_cache"
+        brandId={brand.id}
+        scanWeek={geo.scanWeek}
+        autoRefreshDelay={3000}
       />
 
       <GeoAIVisibilityScore score={geo.score} trend={geo.scoreChangeWow} />

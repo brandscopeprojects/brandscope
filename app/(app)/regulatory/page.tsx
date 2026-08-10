@@ -10,14 +10,17 @@
 import { getRegulatoryData, marketLabel } from "@/lib/data/regulatory";
 import { PageHeader } from "@/components/intelligence/PageHeader";
 import { EmptyState } from "@/components/intelligence/EmptyState";
+import { RealtimeDataBanner } from "@/components/intelligence/RealtimeDataBanner";
 import { StatStrip, type Stat } from "@/components/intelligence/StatStrip";
 import { RegulatoryComplianceMatrix } from "@/components/intelligence/RegulatoryComplianceMatrix";
 import { RegulatoryViolationsFeed } from "@/components/intelligence/RegulatoryViolationsFeed";
 import { RegulatorySourceDocuments } from "@/components/intelligence/RegulatorySourceDocuments";
+import { getCurrentBrand } from "@/lib/data/brand";
 
 export const dynamic = "force-dynamic";
 
 export default async function RegulatoryPage() {
+  const brand = await getCurrentBrand();
   const data = await getRegulatoryData();
 
   if (!data) {
@@ -61,6 +64,15 @@ export default async function RegulatoryPage() {
         subtitle="Compliance posture across age verification, licensing, responsible gambling and more — with verbatim evidence."
         scanWeek={scanWeek}
       />
+
+      {brand && (
+        <RealtimeDataBanner
+          tableName="regulatory_cache"
+          brandId={brand.id}
+          scanWeek={scanWeek}
+          autoRefreshDelay={3000}
+        />
+      )}
 
       <StatStrip stats={stats} />
 
