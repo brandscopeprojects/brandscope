@@ -1,0 +1,25 @@
+name: Deploy researcher-promotions
+
+# Deploys the promotions researcher edge function to Supabase. Runs on a manual
+# dispatch and on pushes to main that touch the function or its shared deps.
+# Requires a repo secret SUPABASE_ACCESS_TOKEN (a Supabase personal access token).
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/researcher-promotions/**"
+      - "supabase/functions/_shared/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy function
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy researcher-promotions --project-ref bzvhcpyqocnziolconcs
