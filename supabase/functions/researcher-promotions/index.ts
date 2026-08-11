@@ -21,7 +21,7 @@ import { completeModule, enqueueSynthesis, invokeFunction } from "../_shared/sca
 import { recordFeatureHealth, toDeadLetter } from "../_shared/logging.ts";
 import { sha256 } from "../_shared/evidence.ts";
 import { languageCode } from "../_shared/dataforseo.ts";
-import { scrapeUrl } from "../_shared/firecrawl.ts";
+import { scrapeUrl, type FirecrawlScrape } from "../_shared/firecrawl.ts";
 import type { ScanModuleMessage, CompetitorRef } from "../_shared/contracts.ts";
 import type { SupabaseClient } from "../_shared/supabase.ts";
 import {
@@ -179,13 +179,23 @@ async function processCompetitor(
   const label = (competitor.name ?? "").trim() || stripDomain(competitor.domain);
   const apex = stripDomain(competitor.domain).toLowerCase();
 
-  // 1b. Firecrawl (owner-approved 2026-08-06): scrape the competitor homepage, which
-  // carries the live promo banners (verified: betPawa "25% Casino Cashback" etc.).
-  // PRIMARY, always-relevant promo source; DataForSEO signals supplement. One scrape
-  // per competitor, guarded by time headroom so the module stays under its 90s budget.
-  const scraped = Date.now() < deadline - 12_000
-    ? await scrapeUrl(`https://${apex}`, { timeoutMs: 25_000 })
+  // 1b. Firecrawl (owner-approved 2026-08-06; mvp-module-sources.md §8): scrape the
+  // competitor's OWN promotions page directly. Homepage first (fast), then follow an
+  // on-domain promo link (/promotions, /bonus, …) and scrape THAT — the deep promo
+  // page becomes the primary evidence AND the user-facing source link. DataForSEO
+  // signals only supplement classification; they never become the source URL.
+  const homeScrape = Date.now() < deadline - 8_000
+    ? await scrapeUrl(`https://${apex}`, { timeoutMs: 15_000 })
     : null;
+
+  let promoScrape: FirecrawlScrape | null = null;
+  if (homeScrape && Date.now() < deadline - 12_000) {
+    const promoLink = extractPromoLink(homeScrape.markdown, apex);
+    if (promoLink) promoScrape = await scrapeUrl(promoLink, { timeoutMs: 15_000 });
+  }
+
+  // Primary scraped page = the dedicated promo page if we got it, else the homepage.
+  const scraped = promoScrape ?? homeScrape;
   const scrapedMention: ContentMention[] = scraped && scraped.markdown.length > 200
     ? [{ text: scraped.markdown.slice(0, 4000), url: scraped.url, timestamp: new Date().toISOString() }]
     : [];
@@ -213,10 +223,16 @@ async function processCompetitor(
   // as the wagering-direction signal (still a % delta, never an exact requirement).
   const wowWageringChangePct = wowBonusChangePct;
 
-  // 4. Pick the best source/promo URL for the evidence chain (prefer the scraped page).
+  // 4. Source URL — ALWAYS the competitor's OWN page (rule: "View source" opens the
+  // brand's promo page, never a third-party news/affiliate URL). Prefer the scraped
+  // promo page, then the scraped homepage, then the apex domain. DataForSEO
+  // news/mention URLs are deliberately NOT eligible here — they stay in raw_data as
+  // supplementary evidence only. Every candidate is domain-guarded.
   const promoUrl =
-    scraped?.url ?? pickUrl(news, mentions) ?? null;
-  const sourceUrl = promoUrl ?? `https://${stripDomain(competitor.domain)}`;
+    (promoScrape?.url && isOnDomain(promoScrape.url, apex) ? promoScrape.url : null) ??
+    (homeScrape?.url && isOnDomain(homeScrape.url, apex) ? homeScrape.url : null) ??
+    `https://${apex}`;
+  const sourceUrl = promoUrl;
 
   // Evidence hash over (source + the classified signal text) — provenance only.
   const evidenceText = [
@@ -318,11 +334,42 @@ async function loadPreviousVolume(
   return out;
 }
 
-/** Prefer a news announcement URL, then a content-mention URL. */
-function pickUrl(news: NewsItem[], mentions: ContentMention[]): string | null {
-  for (const n of news) if (n.url) return n.url;
-  for (const m of mentions) if (m.url) return m.url;
+/** First on-domain promo-page link in the homepage markdown, absolute. null if none.
+ *  Markdown links are `[text](href)`; we match promo-ish text OR href on the apex. */
+function extractPromoLink(markdown: string, apex: string): string | null {
+  const linkRe = /\[([^\]]{0,80})\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)/gi;
+  const promoRe = /promo|bonus|offer|reward|welcome|free\s?bet/i;
+  let m: RegExpExecArray | null;
+  while ((m = linkRe.exec(markdown)) !== null) {
+    const text = m[1] ?? "";
+    const href = m[2] ?? "";
+    if (!promoRe.test(text) && !promoRe.test(href)) continue;
+    const abs = toAbsoluteUrl(href, apex);
+    if (abs && isOnDomain(abs, apex)) return abs;
+  }
   return null;
+}
+
+/** Resolve a possibly-relative href against the competitor apex; null if invalid. */
+function toAbsoluteUrl(href: string, apex: string): string | null {
+  try {
+    return href.startsWith("http")
+      ? new URL(href).toString()
+      : new URL(href, `https://${apex}`).toString();
+  } catch {
+    return null;
+  }
+}
+
+/** True when the URL's host is the competitor apex domain (or a subdomain of it). */
+function isOnDomain(url: string, apex: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    const a = apex.toLowerCase();
+    return host === a || host.endsWith(`.${a}`);
+  } catch {
+    return false;
+  }
 }
 
 // Promo-signal freshness window. Dated items older than this never become
