@@ -75,3 +75,6 @@ export function latestScanWeek<T extends { scan_week: string }>(rows: T[] | null
   if (!rows || rows.length === 0) return null;
   return rows.reduce((max, r) => (r.scan_week > max ? r.scan_week : max), rows[0].scan_week);
 }
+
+// Re-exported from a pure, unit-testable module (no server-only / React deps).
+export { dedupeCompetitorRows } from "@/lib/data/competitor-cache-utils";

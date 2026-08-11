@@ -1,5 +1,5 @@
 // Promotion Signals — Screen 6 (`/promotions`). Reads the per-competitor
-// `promotions_cache` (DataForSEO OnPage + Content parsing, cron-populated) for the
+// `promotions_cache` (Firecrawl promotions-page scraping, cron-populated) for the
 // latest scan_week and surfaces detected competitor promotion ACTIVITY.
 //
 // MVP POLICY (mvp-constraints.md module 8): titled "Promotion Signals", not a
@@ -38,7 +38,7 @@ export default async function PromotionsPage() {
         <PageHeader title="Promotion Signals" subtitle={SUBTITLE} />
         <EmptyState
           title="No promotion signals yet"
-          message="Your first scan will surface competitor promotion activity from DataForSEO content parsing."
+          message="Your first scan will surface competitor promotion activity from Firecrawl promotions-page scraping."
           intent="scanning"
         />
       </div>

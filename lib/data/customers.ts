@@ -6,6 +6,7 @@ import {
   getBrandCompetitors,
   competitorNameMap,
   latestScanWeek,
+  dedupeCompetitorRows,
 } from "@/lib/data/competitors";
 import type { Json } from "@/types/database.types";
 
@@ -166,24 +167,30 @@ export async function getCustomerIntelData(
 
   const supabase = createClient();
 
-  const { data: rows } = await supabase
+  // Scope by tracked competitors (not brand_id) so shared-competitor data scraped
+  // under another brand's scan still shows when ours is missing. See promotions.ts.
+  const brandCompetitors = await getBrandCompetitors(brand.id);
+  const nameMap = competitorNameMap(brandCompetitors);
+  const tierMap = new Map(brandCompetitors.map((c) => [c.id, c.tier]));
+  const ids = brandCompetitors.map((c) => c.id);
+  if (ids.length === 0) return null;
+
+  const { data: rawRows } = await supabase
     .from("customer_intel_cache")
     .select(
-      "competitor_id, scan_week, app_rating, app_review_count, sentiment_score, complaint_themes, demographics, geographic_distribution, traffic_sources",
+      "competitor_id, scan_week, brand_id, created_at, app_rating, app_review_count, sentiment_score, complaint_themes, demographics, geographic_distribution, traffic_sources",
     )
-    .eq("brand_id", brand.id);
+    .in("competitor_id", ids);
 
-  if (!rows || rows.length === 0) return null;
+  if (!rawRows || rawRows.length === 0) return null;
+
+  const rows = dedupeCompetitorRows(rawRows, brand.id);
 
   const scanWeek = latestScanWeek(rows);
   if (!scanWeek) return null;
 
   const latest = rows.filter((r) => r.scan_week === scanWeek);
   if (latest.length === 0) return null;
-
-  const brandCompetitors = await getBrandCompetitors(brand.id);
-  const nameMap = competitorNameMap(brandCompetitors);
-  const tierMap = new Map(brandCompetitors.map((c) => [c.id, c.tier]));
 
   const competitors: CompetitorCustomerIntel[] = latest
     // Only surface rows we can resolve to a tracked competitor name.

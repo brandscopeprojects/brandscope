@@ -210,13 +210,15 @@ export async function getCompetitorProfile(
     .limit(1)
     .maybeSingle();
 
-  // Latest product_intel_cache row (brand_id + competitor_id).
+  // Latest product_intel_cache row for this competitor. Keyed by competitor_id
+  // (NOT brand_id): the competitor is access-gated above, and product data is a
+  // fact about the competitor — reuse the freshest row scraped under any brand's
+  // scan so a failed/partial scan of OURS doesn't blank the profile.
   const { data: productRow } = await supabase
     .from("product_intel_cache")
     .select(
       "sports_betting_status, casino_status, crash_games_status, lottery_status, aviator_promo_active, aviator_bonus_structure, odds_competitiveness_score, new_products_detected",
     )
-    .eq("brand_id", brand.id)
     .eq("competitor_id", competitorId)
     .order("scan_week", { ascending: false })
     .limit(1)

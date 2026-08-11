@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/intelligence/PageHeader";
 import { EmptyState } from "@/components/intelligence/EmptyState";
 import { StatStrip, type Stat } from "@/components/intelligence/StatStrip";
 import { MarketTrendFeed } from "@/components/intelligence/MarketTrendFeed";
+import { MarketOverview } from "@/components/intelligence/MarketOverview";
 import { ScatterMap } from "@/components/ui/ScatterMap";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export default async function MarketIntelPage() {
   const brand = await getCurrentBrand();
   if (!brand) redirect("/onboarding");
 
-  const { scanWeek, scatter, changes, competitorsTracked } =
+  const { scanWeek, scatter, changes, competitorsTracked, overview } =
     await getMarketIntelData(brand);
 
   const header = (
@@ -36,8 +37,10 @@ export default async function MarketIntelPage() {
     />
   );
 
-  // No positioning data AND no recent moves → honest pre-first-scan empty state.
-  if (!scatter && changes.length === 0) {
+  // Empty state only when there is NOTHING to show: no position map, no recent
+  // moves, AND no market-wide overview. With market data present (even if this
+  // brand's own scan failed), we render the Market Overview instead.
+  if (!scatter && changes.length === 0 && !overview) {
     return (
       <div className="space-y-6">
         {header}
@@ -63,6 +66,8 @@ export default async function MarketIntelPage() {
       {header}
 
       <StatStrip stats={stats} />
+
+      {overview && <MarketOverview data={overview} />}
 
       <section className="rounded-card bg-card p-5 shadow-sh1">
         <h3 className="mb-3 text-sm font-semibold text-ink">

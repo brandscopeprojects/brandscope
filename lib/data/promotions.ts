@@ -5,13 +5,14 @@ import {
   getBrandCompetitors,
   competitorNameMap,
   latestScanWeek,
+  dedupeCompetitorRows,
 } from "@/lib/data/competitors";
 import { isDemoMode } from "@/lib/data/demo-mode";
 
 export { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
 
 // Promotion Signals — Screen 6 (`/promotions`). Reads the per-competitor
-// `promotions_cache` (DataForSEO OnPage + Content parsing, cron-populated) for the
+// `promotions_cache` (Firecrawl promotions-page scraping, cron-populated) for the
 // latest scan_week.
 //
 // MVP POLICY — SIGNALS ONLY (mvp-constraints.md module 8): this page is titled
@@ -85,24 +86,32 @@ export async function getPromotionsData(
 
   const supabase = createClient();
 
-  const { data: rows } = await supabase
+  // Scope by the brand's tracked competitors (not brand_id): competitors are
+  // shared, so a rival's promo scraped under another brand's scan is still valid
+  // for us — this keeps the page populated even if OUR scan failed/was partial.
+  const brandCompetitors = await getBrandCompetitors(brand.id);
+  const nameMap = competitorNameMap(brandCompetitors);
+  const tierMap = new Map(brandCompetitors.map((c) => [c.id, c.tier]));
+  const ids = brandCompetitors.map((c) => c.id);
+  if (ids.length === 0) return null;
+
+  const { data: rawRows } = await supabase
     .from("promotions_cache")
     .select(
-      "competitor_id, scan_week, promo_title, promo_type, promo_url, source_url, scraped_at, is_new, evidence_hash, wow_bonus_change_pct",
+      "competitor_id, scan_week, brand_id, promo_title, promo_type, promo_url, source_url, scraped_at, is_new, evidence_hash, wow_bonus_change_pct",
     )
-    .eq("brand_id", brand.id);
+    .in("competitor_id", ids);
 
-  if (!rows || rows.length === 0) return null;
+  if (!rawRows || rawRows.length === 0) return null;
+
+  // One row per competitor+week (prefer our own scan, else freshest shared row).
+  const rows = dedupeCompetitorRows(rawRows, brand.id);
 
   const scanWeek = latestScanWeek(rows);
   if (!scanWeek) return null;
 
   const latest = rows.filter((r) => r.scan_week === scanWeek);
   if (latest.length === 0) return null;
-
-  const brandCompetitors = await getBrandCompetitors(brand.id);
-  const nameMap = competitorNameMap(brandCompetitors);
-  const tierMap = new Map(brandCompetitors.map((c) => [c.id, c.tier]));
 
   const signals: PromotionSignal[] = latest
     // Only surface rows we can resolve to a tracked competitor name.

@@ -6,6 +6,7 @@ import {
   getBrandCompetitors,
   competitorNameMap,
 } from "@/lib/data/competitors";
+import { getMarketOverview, type MarketOverview } from "@/lib/data/market-overview";
 import type { ScatterPoint } from "@/types/view-models";
 import { isDemoMode } from "@/lib/data/demo-mode";
 
@@ -53,6 +54,9 @@ export type MarketIntelData = {
   changes: MarketChange[];
   /** Count of distinct competitors the brand tracks (real, for the StatStrip). */
   competitorsTracked: number;
+  /** Market-wide overview (from market_intel_cache); null when the market has no
+   *  cached data. Populates even when THIS brand's own scan failed/was partial. */
+  overview: MarketOverview | null;
 };
 
 function normaliseDetail(value: unknown): CompetitorChangeDetail | null {
@@ -115,10 +119,15 @@ export async function getMarketIntelData(
     );
   }
 
+  // Market-wide overview from market_intel_cache — populates even when this
+  // brand's own scan failed (so the page isn't blank on a failed/partial scan).
+  const overview = await getMarketOverview(brand.market?.[0] ?? "", competitors);
+
   return {
-    scanWeek: dashboard?.scanWeek ?? null,
+    scanWeek: dashboard?.scanWeek ?? overview?.scanWeek ?? null,
     scatter: dashboard?.scatter ?? null,
     changes,
     competitorsTracked: competitors.length,
+    overview,
   };
 }

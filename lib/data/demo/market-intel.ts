@@ -131,4 +131,5 @@ export const DEMO_MARKET_INTEL: MarketIntelData = {
   ],
   // Mockup #6: "47 Total Brands Tracked".
   competitorsTracked: 47,
+  overview: null,
 };

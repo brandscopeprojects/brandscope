@@ -1,10 +1,12 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentBrand, type BrandSummary } from "@/lib/data/brand";
 import {
   getBrandCompetitors,
   competitorNameMap,
   latestScanWeek,
+  dedupeCompetitorRows,
 } from "@/lib/data/competitors";
 import type { Json } from "@/types/database.types";
 
@@ -178,16 +180,33 @@ function readLandscape(rows: Array<{ raw_data?: Json | null }>): KeywordLandscap
 export async function getTrafficSeoData(
   brand: BrandSummary,
 ): Promise<TrafficSeoData | null> {
-  const supabase = createClient();
+  // seo_cache RLS stays BRAND-scoped (unlike the other caches) because its
+  // `raw_data.brand_self` holds the SCANNING brand's own metrics — we must not
+  // broaden RLS and leak that cross-brand. Instead read via the service-role
+  // admin client, scoped IN CODE to the brand's tracked competitor ids (resolved
+  // below through the RLS-scoped getBrandCompetitors). We only ever expose
+  // `brand_self` from OUR OWN rows (see ownLatest); the shared columns and the
+  // market-level keyword landscape carry no other brand's private data.
+  const supabase = createAdminClient();
 
-  const { data: rows } = await supabase
+  // Scope by tracked competitors (not brand_id) so shared-competitor SEO scraped
+  // under another brand's scan still shows when ours is missing. See promotions.ts.
+  const brandCompetitors = await getBrandCompetitors(brand.id);
+  const nameMap = competitorNameMap(brandCompetitors);
+  const tierMap = new Map(brandCompetitors.map((c) => [c.id, c.tier]));
+  const ids = brandCompetitors.map((c) => c.id);
+  if (ids.length === 0) return null;
+
+  const { data: rawRows } = await supabase
     .from("seo_cache")
     .select(
-      "competitor_id, scan_week, domain_authority, estimated_traffic, organic_traffic, paid_traffic, keyword_gaps, raw_data",
+      "competitor_id, scan_week, brand_id, created_at, domain_authority, estimated_traffic, organic_traffic, paid_traffic, keyword_gaps, raw_data",
     )
-    .eq("brand_id", brand.id);
+    .in("competitor_id", ids);
 
-  if (!rows || rows.length === 0) return null;
+  if (!rawRows || rawRows.length === 0) return null;
+
+  const rows = dedupeCompetitorRows(rawRows, brand.id);
 
   const scanWeek = latestScanWeek(rows);
   if (!scanWeek) return null;
@@ -195,9 +214,9 @@ export async function getTrafficSeoData(
   const latest = rows.filter((r) => r.scan_week === scanWeek);
   if (latest.length === 0) return null;
 
-  const brandCompetitors = await getBrandCompetitors(brand.id);
-  const nameMap = competitorNameMap(brandCompetitors);
-  const tierMap = new Map(brandCompetitors.map((c) => [c.id, c.tier]));
+  // The "you" row must come ONLY from OUR OWN scan's rows — a shared row carries
+  // the OTHER brand's `raw_data.brand_self`, which must never render as "you".
+  const ownLatest = latest.filter((r) => r.brand_id === brand.id);
 
   const competitorRows: CompetitorSeo[] = latest
     // Only surface rows we can resolve to a tracked competitor name.
@@ -228,7 +247,7 @@ export async function getTrafficSeoData(
 
   // The brand's OWN snapshot (raw_data.brand_self, written by the researcher) →
   // a highlighted "you" row so the customer sees where THEY stand, not just rivals.
-  const self = readBrandSelf(latest);
+  const self = readBrandSelf(ownLatest);
   const ownRow: CompetitorSeo | null = self
     ? (() => {
         const split = self.organicHits + self.paidHits;
