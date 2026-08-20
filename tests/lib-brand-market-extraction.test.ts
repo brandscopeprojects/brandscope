@@ -1074,6 +1074,126 @@ describe("Brand Market Extraction (Step 3)", () => {
 
       spy.mockRestore();
     });
+
+    it("PROOF: Geography-agnostic detection — detects UK, Brazil, Philippines (non-African)", async () => {
+      // PROOF: Step 3 is NOT Africa-specific. Detects any market globally.
+      // Unsupported markets (UK, BR, PH) stored in unsupported_market_evidence[].
+
+      const htmlUkBrazilPhilippines = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>GlobalBet International Gaming</title>
+          <meta property="og:site_name" content="GlobalBet">
+          <link rel="alternate" hreflang="en-GB" href="https://example.com/gb">
+          <link rel="alternate" hreflang="pt-BR" href="https://example.com/br">
+          <link rel="alternate" hreflang="en-PH" href="https://example.com/ph">
+        </head>
+        <body>
+          <h1>GlobalBet - Global Gaming Platform</h1>
+
+          <section id="uk">
+            <h2>United Kingdom</h2>
+            <p>UK Gambling Commission License: UKGC-2024-001</p>
+            <p>Prices in GBP (British Pound)</p>
+            <p>Contact: +44 123 456789</p>
+          </section>
+
+          <section id="brazil">
+            <h2>Brazil</h2>
+            <p>Approved by SECAP Brazil</p>
+            <p>Preços em BRL (Real Brasileiro)</p>
+            <p>Contato: +55 11 98765-4321</p>
+          </section>
+
+          <section id="philippines">
+            <h2>Philippines</h2>
+            <p>PAGCOR Licensed - Philippine Amusement</p>
+            <p>Prices in PHP (Philippine Peso)</p>
+            <p>Contact: +63 2 8765-4321</p>
+          </section>
+
+          <nav>
+            <a href="/gb">Play in UK</a>
+            <a href="/br">Jogar no Brasil</a>
+            <a href="/ph">Laruin sa Pilipinas</a>
+          </nav>
+        </body>
+        </html>
+      `;
+
+      const spy = vi.spyOn(brandDetection, "safeFetchDomain");
+
+      spy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        contentType: "text/html",
+        body: htmlUkBrazilPhilippines,
+      });
+
+      const result = await extractBrandAndMarkets("https://example.com/");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // PROOF 1: Non-African markets ARE detected (UK, BR, PH)
+      // ─────────────────────────────────────────────────────────────────────────────
+      const allDetectedCodes = [
+        ...result.detected_markets.map((m) => m.market_code),
+        ...result.unsupported_market_evidence.map((m) => m.country_code),
+      ].sort();
+
+      // All three markets should be detected (somewhere)
+      expect(allDetectedCodes).toContain("GB");
+      expect(allDetectedCodes).toContain("BR");
+      expect(allDetectedCodes).toContain("PH");
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // PROOF 2: Unsupported markets stored in unsupported_market_evidence[]
+      // (Currently only KE/TZ/ZM/NG/ZA are supported by Brandscope MVP)
+      // ─────────────────────────────────────────────────────────────────────────────
+      const unsupportedCodes = result.unsupported_market_evidence.map((m) => m.country_code).sort();
+      expect(unsupportedCodes).toContain("GB"); // UK not yet tracked by Brandscope
+      expect(unsupportedCodes).toContain("BR"); // Brazil not yet tracked by Brandscope
+      expect(unsupportedCodes).toContain("PH"); // Philippines not yet tracked by Brandscope
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // PROOF 3: Each has signals proving detection (not merged/lost)
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      // GB: detected via UK Gambling Commission licence + hreflang
+      const gbEvidence = result.unsupported_market_evidence.find((m) => m.country_code === "GB");
+      expect(gbEvidence).toBeDefined();
+      expect(gbEvidence!.signals.length).toBeGreaterThan(0);
+      // Should have at least licence OR hreflang signal
+      expect(
+        gbEvidence!.signals.some((s) => s.signal_type === "gaming_licence" || s.signal_type === "hreflang_region"),
+      ).toBe(true);
+
+      // BR: detected via SECAP licence + hreflang
+      const brEvidence = result.unsupported_market_evidence.find((m) => m.country_code === "BR");
+      expect(brEvidence).toBeDefined();
+      expect(brEvidence!.signals.length).toBeGreaterThan(0);
+      expect(
+        brEvidence!.signals.some((s) => s.signal_type === "gaming_licence" || s.signal_type === "hreflang_region"),
+      ).toBe(true);
+
+      // PH: detected via PAGCOR licence + hreflang
+      const phEvidence = result.unsupported_market_evidence.find((m) => m.country_code === "PH");
+      expect(phEvidence).toBeDefined();
+      expect(phEvidence!.signals.length).toBeGreaterThan(0);
+      expect(
+        phEvidence!.signals.some((s) => s.signal_type === "gaming_licence" || s.signal_type === "hreflang_region"),
+      ).toBe(true);
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // PROOF 4: Correct architecture (not Africa-only)
+      // ─────────────────────────────────────────────────────────────────────────────
+      expect(result.unsupported_market_evidence.length).toBeGreaterThanOrEqual(3);
+
+      spy.mockRestore();
+    });
   });
 
   describe("Architecture compliance", () => {
