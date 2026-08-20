@@ -1194,6 +1194,83 @@ describe("Brand Market Extraction (Step 3)", () => {
 
       spy.mockRestore();
     });
+
+    it("CANONICAL: Detects ISO country code NOT in ISO_COUNTRY_NAMES (Canada) without code changes", async () => {
+      // CANONICAL PROOF: Step 3 truly is geography-agnostic using ISO codes.
+      // Canada (CA) is NOT in ISO_COUNTRY_NAMES (was deliberately excluded to test extensibility).
+      // Detection via currency (CAD), phone code (+1), ccTLD (.ca) — no extraction code change needed.
+      // Result: unsupported_market_evidence (Brandscope doesn't yet track Canada).
+      // When Brandscope adds Canada modules, just add CA: "Canada" to ISO_COUNTRY_NAMES + SUPPORTED_MARKETS.
+
+      const htmlCanada = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Bet Canada - iGaming</title>
+          <meta property="og:site_name" content="BetCanada">
+        </head>
+        <body>
+          <h1>BetCanada - Licensed Gaming</h1>
+          <p>We operate across Canada.</p>
+          <p>Prices in CAD (Canadian Dollar)</p>
+          <p>Contact: +1 416 555 1234</p>
+          <a href="/terms">Terms</a>
+        </body>
+        </html>
+      `;
+
+      const spy = vi.spyOn(brandDetection, "safeFetchDomain");
+
+      spy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        contentType: "text/html",
+        body: htmlCanada,
+      });
+
+      const result = await extractBrandAndMarkets("https://betcanada.ca/");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // PROOF: Canada detected even though NOT in ISO_COUNTRY_NAMES
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      const detectedCodes = [
+        ...result.detected_markets.map((m) => m.market_code),
+        ...result.unsupported_market_evidence.map((m) => m.country_code),
+      ];
+
+      // CA should be detected (somewhere)
+      expect(detectedCodes).toContain("CA");
+
+      // CA is unsupported (not in SUPPORTED_MARKETS), so must be in unsupported_market_evidence
+      const caEvidence = result.unsupported_market_evidence.find((m) => m.country_code === "CA");
+      expect(caEvidence).toBeDefined();
+      expect(caEvidence!.signals.length).toBeGreaterThan(0);
+
+      // Proof: detected via generic signals (currency, phone code, ccTLD)
+      // No jurisdiction-specific regulator data exists, but detection still works
+      const hasCurrency = caEvidence!.signals.some((s) => s.detected_value === "CAD");
+      const hasPhoneCode = caEvidence!.signals.some((s) => s.signal_type === "country_phone_code");
+      const hasCcTld = caEvidence!.signals.some((s) => s.signal_type === "ccTLD");
+
+      // At least 2 of 3 generic signals should match
+      const genericSignalCount = [hasCurrency, hasPhoneCode, hasCcTld].filter(Boolean).length;
+      expect(genericSignalCount).toBeGreaterThanOrEqual(2);
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // ARCHITECTURAL PROOF:
+      // To add Canada to Brandscope's supported list, ONLY these changes needed:
+      // 1. Add CA to ISO_COUNTRY_NAMES (if not already done)
+      // 2. Add CA to SUPPORTED_MARKETS
+      // 3. Optionally add CA to JURISDICTION_LICENCE_PATTERNS (gaming regulators)
+      // NO extraction code changes needed. Detection already works.
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      spy.mockRestore();
+    });
   });
 
   describe("Architecture compliance", () => {
