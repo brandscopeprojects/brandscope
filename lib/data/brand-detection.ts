@@ -1,7 +1,7 @@
 import "server-only";
 import { resolve4, resolve6 } from "node:dns/promises";
 import { createConnection } from "node:net";
-import https from "node:https";
+import { Agent as UndiciAgent } from "undici";
 
 /**
  * Brand Detection — brand identity detection from domain + homepage analysis.
@@ -11,7 +11,8 @@ import https from "node:https";
  *
  * 1. DNS resolution happens BEFORE fetch via node:dns (not via fetch's internal DNS).
  * 2. All resolved IPs are validated (IPv4 and IPv6) before any connection attempt.
- * 3. Connection is bound to validated IP via custom Agent (prevents DNS rebinding).
+ * 3. Connection is bound to validated IP via Undici dispatcher with custom lookup
+ *    (prevents DNS rebinding: the socket connects to the pre-validated IP only).
  * 4. Redirects are manually handled and each target is revalidated.
  * 5. Response body is read incrementally with hard size limit (streaming enforcement).
  * 6. Destination ports restricted to 80/443 only.
@@ -42,6 +43,15 @@ export type DomainValidationError =
 export type DomainValidationResult =
   | { ok: true; normalised: string; resolved: string; ips: string[] }
   | { ok: false; error: DomainValidationError; detail?: string };
+
+/**
+ * Extended RequestInit to include Node.js/Undici's 'dispatcher' option.
+ * The native fetch() in Node.js supports dispatcher to control socket
+ * connection behavior (e.g., custom DNS lookup for SSRF protection).
+ */
+interface FetchInit extends RequestInit {
+  dispatcher?: UndiciAgent;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -373,12 +383,23 @@ export async function validateDomainSafety(
  * The custom lookup function returns the validated IP, ensuring fetch() connects
  * to that IP instead of performing its own DNS resolution.
  */
-function createValidatedDnsAgent(validatedIp: string): https.Agent {
-  return new https.Agent({
-    lookup: (hostname: string, options: any, callback: any) => {
-      // Return the pre-validated IP for this hostname.
-      // This prevents fetch() from doing its own DNS lookup.
-      callback(null, validatedIp, validatedIp.includes(":") ? 6 : 4);
+/**
+ * Creates an Undici dispatcher with a custom DNS lookup that binds to a validated IP.
+ * This ensures the socket connection uses ONLY the pre-validated IP address,
+ * preventing DNS rebinding attacks where a hostname resolves differently on
+ * the second lookup (after the first DNS check).
+ *
+ * @param validatedIp The pre-validated IP address (already checked against SSRF blocklist)
+ * @returns Undici Agent configured with custom lookup binding to the validated IP
+ */
+function createValidatedDnsDispatcher(validatedIp: string): UndiciAgent {
+  return new UndiciAgent({
+    connect: {
+      lookup: (hostname: string, options: any, callback: any) => {
+        // Bind to the pre-validated IP. The socket connection will use this IP
+        // and cannot rebind to a different address (e.g., private IP).
+        callback(null, validatedIp, validatedIp.includes(":") ? 6 : 4);
+      },
     },
   });
 }
@@ -484,15 +505,16 @@ async function safeFetchWithRedirectValidation(
   while (redirectCount <= maxRedirects) {
     try {
       // Use first validated IP to bind DNS (prevents rebinding).
-      const agent = createValidatedDnsAgent(currentValidatedIps[0]!);
+      const dispatcher = createValidatedDnsDispatcher(currentValidatedIps[0]!);
 
-      const response = await fetch(currentUrl, {
+      const fetchOptions: FetchInit = {
         method: "GET",
         redirect: "manual", // Disable automatic redirects
         signal: AbortSignal.timeout(timeout),
         headers: { "User-Agent": "Mozilla/5.0 (compatible; Brandscope/1.0)" },
-        agent, // Custom agent binds to validated IP
-      } as any);
+        dispatcher, // Undici dispatcher binds socket connection to validated IP
+      };
+      const response = await fetch(currentUrl, fetchOptions);
 
       // Check for redirect status (3xx).
       if (response.status >= 300 && response.status < 400) {
