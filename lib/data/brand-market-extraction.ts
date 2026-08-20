@@ -847,29 +847,107 @@ function isHomepageEvidenceSufficient(markets: MarketCandidate[]): boolean {
 }
 
 /**
- * Deterministically select secondary pages to fetch if homepage is insufficient.
- * Returns URLs of pages to fetch (max 3).
+ * Discover and select secondary pages from homepage links.
  *
- * Strategy: prioritize pages likely to contain country/licence/regulatory signals
+ * Strategy:
+ * 1. Parse all <a> tags from the homepage
+ * 2. Score links by keyword relevance (Terms, Legal, Licence, Responsible Gaming, etc.)
+ * 3. Select up to 3 highest-scoring same-origin links
+ * 4. Fallback: only if no links found, try conventional paths
+ *
+ * This avoids unnecessary 404s and discovers actual site structure.
  */
-function selectSecondaryPagesToFetch(baseUrl: string): string[] {
-  const base = new URL(baseUrl);
-  const hostname = base.hostname;
-  const secondaryPaths = [
-    "/terms",
-    "/terms-and-conditions",
-    "/legal",
-    "/responsible-gaming",
-    "/licenses",
-    "/licences",
-    "/about",
-    "/compliance",
+function selectSecondaryPagesToFetch(dom: JSDOM, baseUrl: string): string[] {
+  const baseHostname = new URL(baseUrl).hostname;
+  const relevantKeywords = [
+    "terms",
+    "legal",
+    "licence",
+    "license",
+    "responsible",
+    "gaming",
+    "play",
+    "compliance",
+    "about",
+    "contact",
+    "regulatory",
+    "company",
   ];
 
-  const selected: string[] = [];
-  for (const path of secondaryPaths) {
-    if (selected.length >= 3) break;
-    selected.push(`https://${hostname}${path}`);
+  // Step 1: Discover links from homepage
+  const links: Array<{ url: string; score: number }> = [];
+
+  const anchors = dom.window.document.querySelectorAll("a[href]");
+  for (const anchor of anchors) {
+    const href = anchor.getAttribute("href");
+    if (!href) continue;
+
+    // Parse href (handle relative, absolute, fragments)
+    let url: URL;
+    try {
+      url = new URL(href, baseUrl);
+    } catch {
+      continue;
+    }
+
+    // Same-origin only (no external links)
+    if (url.hostname !== baseHostname) continue;
+
+    // Avoid fragments, query-only URLs
+    if (!url.pathname || url.pathname === "/") continue;
+
+    // Score based on text content + href + aria-label
+    let score = 0;
+    const linkText = (anchor.textContent || "").toLowerCase();
+    const hrefLower = url.pathname.toLowerCase();
+    const ariaLabel = (anchor.getAttribute("aria-label") || "").toLowerCase();
+    const combinedText = `${linkText} ${hrefLower} ${ariaLabel}`;
+
+    for (const keyword of relevantKeywords) {
+      if (combinedText.includes(keyword)) {
+        score += 10; // Strong match in text/label/href
+      }
+    }
+
+    if (score > 0) {
+      links.push({ url: url.toString(), score });
+    }
+  }
+
+  // Step 2: Select top-scoring links (deduplicate, max 3)
+  const deduped = new Map<string, number>();
+  for (const { url, score } of links) {
+    // Normalize: remove trailing slash, query, fragment
+    const normalized = new URL(url).pathname.toLowerCase();
+    if (!deduped.has(normalized) || deduped.get(normalized)! < score) {
+      deduped.set(normalized, score);
+    }
+  }
+
+  const selected = Array.from(deduped.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([path]) => {
+      try {
+        const url = new URL(baseUrl);
+        url.pathname = path;
+        return url.toString();
+      } catch {
+        return "";
+      }
+    })
+    .filter((url) => url);
+
+  // Step 3: Fallback to conventional paths only if no links discovered
+  if (selected.length === 0) {
+    const base = new URL(baseUrl);
+    const hostname = base.hostname;
+    const fallbackPaths = ["/legal", "/terms", "/responsible-gaming", "/about", "/compliance"];
+
+    for (const path of fallbackPaths) {
+      if (selected.length >= 3) break;
+      selected.push(`https://${hostname}${path}`);
+    }
   }
 
   return selected;
@@ -927,8 +1005,8 @@ export async function extractBrandAndMarkets(
 
     // STEP 4: Check if homepage evidence is sufficient
     if (!isHomepageEvidenceSufficient(marketCandidates)) {
-      // Deterministically select secondary pages to fetch (max 3)
-      const secondaryUrls = selectSecondaryPagesToFetch(domain);
+      // Discover secondary pages from homepage links or fallback to conventional paths
+      const secondaryUrls = selectSecondaryPagesToFetch(dom, domain);
 
       for (const secondaryUrl of secondaryUrls) {
         if (secondaryPagesUsed.length >= 3) break;
