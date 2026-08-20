@@ -1137,60 +1137,49 @@ describe("Brand Market Extraction (Step 3)", () => {
       if (!result.ok) return;
 
       // ─────────────────────────────────────────────────────────────────────────────
-      // PROOF 1: Non-African markets ARE detected (UK, BR, PH)
+      // PROOF 1: Non-African markets ARE detected (UK, BR, PH are fully selectable)
       // ─────────────────────────────────────────────────────────────────────────────
-      const allDetectedCodes = [
-        ...result.detected_markets.map((m) => m.market_code),
-        ...result.unsupported_market_evidence.map((m) => m.country_code),
-      ].sort();
+      const detectedCodes = result.detected_markets.map((m) => m.market_code).sort();
 
-      // All three markets should be detected (somewhere)
-      expect(allDetectedCodes).toContain("GB");
-      expect(allDetectedCodes).toContain("BR");
-      expect(allDetectedCodes).toContain("PH");
+      // All three valid ISO countries should be detected (no Brandscope-level country gates)
+      expect(detectedCodes).toContain("GB");
+      expect(detectedCodes).toContain("BR");
+      expect(detectedCodes).toContain("PH");
 
       // ─────────────────────────────────────────────────────────────────────────────
-      // PROOF 2: Unsupported markets stored in unsupported_market_evidence[]
-      // (Currently only KE/TZ/ZM/NG/ZA are supported by Brandscope MVP)
+      // PROOF 2: Architecture proof — no "unsupported markets" for valid ISO countries
+      // Geographic limitations exist ONLY at module/provider level (separate from Step 3).
       // ─────────────────────────────────────────────────────────────────────────────
-      const unsupportedCodes = result.unsupported_market_evidence.map((m) => m.country_code).sort();
-      expect(unsupportedCodes).toContain("GB"); // UK not yet tracked by Brandscope
-      expect(unsupportedCodes).toContain("BR"); // Brazil not yet tracked by Brandscope
-      expect(unsupportedCodes).toContain("PH"); // Philippines not yet tracked by Brandscope
+      expect(result.unsupported_market_evidence.length).toBe(0);
 
       // ─────────────────────────────────────────────────────────────────────────────
-      // PROOF 3: Each has signals proving detection (not merged/lost)
+      // PROOF 3: Each market has signals proving detection (not merged/lost)
       // ─────────────────────────────────────────────────────────────────────────────
 
       // GB: detected via UK Gambling Commission licence + hreflang
-      const gbEvidence = result.unsupported_market_evidence.find((m) => m.country_code === "GB");
-      expect(gbEvidence).toBeDefined();
-      expect(gbEvidence!.signals.length).toBeGreaterThan(0);
+      const gbMarket = result.detected_markets.find((m) => m.market_code === "GB");
+      expect(gbMarket).toBeDefined();
+      expect(gbMarket!.signals.length).toBeGreaterThan(0);
       // Should have at least licence OR hreflang signal
       expect(
-        gbEvidence!.signals.some((s) => s.signal_type === "gaming_licence" || s.signal_type === "hreflang_region"),
+        gbMarket!.signals.some((s) => s.signal_type === "gaming_licence" || s.signal_type === "hreflang_region"),
       ).toBe(true);
 
       // BR: detected via SECAP licence + hreflang
-      const brEvidence = result.unsupported_market_evidence.find((m) => m.country_code === "BR");
-      expect(brEvidence).toBeDefined();
-      expect(brEvidence!.signals.length).toBeGreaterThan(0);
+      const brMarket = result.detected_markets.find((m) => m.market_code === "BR");
+      expect(brMarket).toBeDefined();
+      expect(brMarket!.signals.length).toBeGreaterThan(0);
       expect(
-        brEvidence!.signals.some((s) => s.signal_type === "gaming_licence" || s.signal_type === "hreflang_region"),
+        brMarket!.signals.some((s) => s.signal_type === "gaming_licence" || s.signal_type === "hreflang_region"),
       ).toBe(true);
 
       // PH: detected via PAGCOR licence + hreflang
-      const phEvidence = result.unsupported_market_evidence.find((m) => m.country_code === "PH");
-      expect(phEvidence).toBeDefined();
-      expect(phEvidence!.signals.length).toBeGreaterThan(0);
+      const phMarket = result.detected_markets.find((m) => m.market_code === "PH");
+      expect(phMarket).toBeDefined();
+      expect(phMarket!.signals.length).toBeGreaterThan(0);
       expect(
-        phEvidence!.signals.some((s) => s.signal_type === "gaming_licence" || s.signal_type === "hreflang_region"),
+        phMarket!.signals.some((s) => s.signal_type === "gaming_licence" || s.signal_type === "hreflang_region"),
       ).toBe(true);
-
-      // ─────────────────────────────────────────────────────────────────────────────
-      // PROOF 4: Correct architecture (not Africa-only)
-      // ─────────────────────────────────────────────────────────────────────────────
-      expect(result.unsupported_market_evidence.length).toBeGreaterThanOrEqual(3);
 
       spy.mockRestore();
     });
@@ -1242,31 +1231,28 @@ describe("Brand Market Extraction (Step 3)", () => {
         ...result.unsupported_market_evidence.map((m) => m.country_code),
       ];
 
-      // CA should be detected (somewhere)
+      // CA should be detected (anywhere in detected_markets)
       expect(detectedCodes).toContain("CA");
 
-      // CA is unsupported (not in SUPPORTED_MARKETS), so must be in unsupported_market_evidence
-      const caEvidence = result.unsupported_market_evidence.find((m) => m.country_code === "CA");
-      expect(caEvidence).toBeDefined();
-      expect(caEvidence!.signals.length).toBeGreaterThan(0);
+      // CA is a valid ISO country, so it's in detected_markets (no Brandscope-level gates)
+      const caMarket = result.detected_markets.find((m) => m.market_code === "CA");
+      expect(caMarket).toBeDefined();
+      expect(caMarket!.signals.length).toBeGreaterThan(0);
 
       // Proof: detected via generic signals (currency, phone code, ccTLD)
       // No jurisdiction-specific regulator data exists, but detection still works
-      const hasCurrency = caEvidence!.signals.some((s) => s.detected_value === "CAD");
-      const hasPhoneCode = caEvidence!.signals.some((s) => s.signal_type === "country_phone_code");
-      const hasCcTld = caEvidence!.signals.some((s) => s.signal_type === "ccTLD");
+      const hasCurrency = caMarket!.signals.some((s) => s.detected_value === "CAD");
+      const hasPhoneCode = caMarket!.signals.some((s) => s.signal_type === "country_phone_code");
+      const hasCcTld = caMarket!.signals.some((s) => s.signal_type === "ccTLD");
 
       // At least 2 of 3 generic signals should match
       const genericSignalCount = [hasCurrency, hasPhoneCode, hasCcTld].filter(Boolean).length;
       expect(genericSignalCount).toBeGreaterThanOrEqual(2);
 
       // ─────────────────────────────────────────────────────────────────────────────
-      // ARCHITECTURAL PROOF:
-      // To add Canada to Brandscope's supported list, ONLY these changes needed:
-      // 1. Add CA to ISO_COUNTRY_NAMES (if not already done)
-      // 2. Add CA to SUPPORTED_MARKETS
-      // 3. Optionally add CA to JURISDICTION_LICENCE_PATTERNS (gaming regulators)
-      // NO extraction code changes needed. Detection already works.
+      // ARCHITECTURAL PROOF: Truly geography-agnostic
+      // Any valid ISO 3166-1 country is selectable as a market (no Brandscope-level gates).
+      // Module/provider coverage is evaluated separately (DataForSEO, regulatory, etc.).
       // ─────────────────────────────────────────────────────────────────────────────
 
       spy.mockRestore();
@@ -1327,36 +1313,33 @@ describe("Brand Market Extraction (Step 3)", () => {
       if (!result.ok) return;
 
       // ─────────────────────────────────────────────────────────────────────────────
-      // PROOF 1: ME is detected (somewhere in detected or unsupported)
+      // PROOF 1: ME is detected (in detected_markets, not unsupported_market_evidence)
       // ─────────────────────────────────────────────────────────────────────────────
-      const allCodes = [
-        ...result.detected_markets.map((m) => m.market_code),
-        ...result.unsupported_market_evidence.map((m) => m.country_code),
-      ];
-      expect(allCodes).toContain("ME");
+      const detectedCodes = result.detected_markets.map((m) => m.market_code);
+      expect(detectedCodes).toContain("ME");
 
       // ─────────────────────────────────────────────────────────────────────────────
-      // PROOF 2: ME is in unsupported_market_evidence (not in SUPPORTED_MARKETS)
+      // PROOF 2: No "unsupported markets" for valid ISO countries (architecture proof)
       // ─────────────────────────────────────────────────────────────────────────────
-      const meEvidence = result.unsupported_market_evidence.find((m) => m.country_code === "ME");
-      expect(meEvidence).toBeDefined();
-      expect(meEvidence!.signals.length).toBeGreaterThan(0);
+      expect(result.unsupported_market_evidence.length).toBe(0);
 
       // ─────────────────────────────────────────────────────────────────────────────
       // PROOF 3: Detection worked via generic signals (no hardcoded ME config)
-      // Country selector (medium) + ccTLD (weak) → ≥2 different signal types
+      // Country selector (medium signal) → sufficient for eligibility
       // ─────────────────────────────────────────────────────────────────────────────
-      const signalTypes = new Set(meEvidence!.signals.map((s) => s.signal_type));
+      const meMarket = result.detected_markets.find((m) => m.market_code === "ME");
+      expect(meMarket).toBeDefined();
+      expect(meMarket!.signals.length).toBeGreaterThan(0);
+      const signalTypes = new Set(meMarket!.signals.map((s) => s.signal_type));
       expect(signalTypes.size).toBeGreaterThanOrEqual(1); // At least one signal type
       expect(
-        meEvidence!.signals.some((s) => s.signal_type === "country_selector"),
+        meMarket!.signals.some((s) => s.signal_type === "country_selector"),
       ).toBe(true); // Country selector detected
 
       // ─────────────────────────────────────────────────────────────────────────────
       // ARCHITECTURAL PROOF: Zero code/config needed for new countries
-      // To add Montenegro to Brandscope's supported list requires ONLY:
-      // 1. Add ME to SUPPORTED_MARKETS
-      // NO extraction code changes needed. Detection already works via ISO_3166_COUNTRIES.
+      // Any valid ISO 3166-1 country is immediately selectable (no activation needed).
+      // Module coverage is separate config (DataForSEO, regulatory, etc.).
       // ─────────────────────────────────────────────────────────────────────────────
 
       spy.mockRestore();

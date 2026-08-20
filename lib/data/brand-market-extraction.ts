@@ -415,17 +415,15 @@ const JURISDICTION_LICENCE_PATTERNS: Record<string, string> = {
 };
 
 /**
- * Product-level market coverage (NOT detection validity).
- * These are the markets where Brandscope currently provides integrated module coverage (MVP).
- * Detection works for ANY country in ISO_3166_COUNTRIES; only these are in detected_markets.
- * Everything else that is recognized in lib/onboarding/countries.ts goes to unsupported_market_evidence.
+ * REMOVED: No Brandscope-level country gates.
  *
- * MVP phase supports African markets only; expand this set as module coverage is added globally.
- */
-const SUPPORTED_MARKETS = new Set([
-  // MVP African markets with full module coverage (Kenya, Nigeria, South Africa, Tanzania, Zambia)
-  "NG", "KE", "ZA", "TZ", "ZM",
-]);
+ * Architecture: ANY valid ISO 3166-1 country is selectable and trackable as a market.
+ * Geographic limitations exist ONLY at module/provider capability level:
+ * - DataForSEO has coverage in certain countries (separate provider config)
+ * - Regulatory corpus is curated per jurisdiction (separate ingestion config)
+ * - Social-source availability is platform-specific (separate provider config)
+ *
+ * This keeps Step 3 extraction truly geography-agnostic and product-independent.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITIES
@@ -1473,21 +1471,10 @@ export async function extractBrandAndMarkets(
       }
     }
 
-    // STEP 5: Separate unsupported markets
+    // STEP 5: All detected markets are returned.
+    // No Brandscope-level country gates. Module/provider coverage is evaluated separately.
+    const detectedMarkets = marketCandidates;
     const unsupportedMarkets: UnsupportedMarketEvidence[] = [];
-    const detectedMarkets = marketCandidates.filter((m) => {
-      if (!SUPPORTED_MARKETS.has(m.market_code)) {
-        unsupportedMarkets.push({
-          country_code: m.market_code,
-          country_name: m.market_name,
-          signals: m.signals,
-          source_urls: m.source_urls,
-          reason: "country_not_in_brandscope_registry",
-        });
-        return false;
-      }
-      return true;
-    });
 
     return {
       ok: true,
