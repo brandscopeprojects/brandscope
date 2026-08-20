@@ -92,9 +92,8 @@ describe("Step 3 Live Domain Validation", () => {
       }
 
       log(`\n### Fetch Metadata`);
-      log(`- Primary Status: ${result.extraction_metadata.primary_fetch_status}`);
-      log(`- Content Type: ${result.extraction_metadata.content_type}`);
-      log(`- Bytes Read: ${result.extraction_metadata.bytes_read} / ${result.extraction_metadata.bytes_limit}`);
+      log(`- Homepage URL: ${result.extraction_metadata.homepage_url}`);
+      log(`- Final URL: ${result.extraction_metadata.final_resolved_url}`);
 
       // Validation: SportPesa should detect Kenya
       const keDetected = result.detected_markets.some((m) => m.market_code === "KE");
@@ -102,7 +101,7 @@ describe("Step 3 Live Domain Validation", () => {
       log(`Expected KE in detected markets: ${keDetected ? "YES" : "NO"}`);
     } else {
       log(`\nError: ${result.error}`);
-      log(`Fetch Status: ${result.fetch_status}`);
+      if (result.detail) log(`Detail: ${result.detail}`);
       log("### VALIDATION: ❌ FAIL (fetch or parse error)");
     }
   });
@@ -148,10 +147,6 @@ describe("Step 3 Live Domain Validation", () => {
       log(`\n### Secondary Pages Fetched`);
       log(`- Count: ${result.extraction_metadata.secondary_pages_used.length}`);
 
-      log(`\n### Fetch Metadata`);
-      log(`- Primary Status: ${result.extraction_metadata.primary_fetch_status}`);
-      log(`- Bytes Read: ${result.extraction_metadata.bytes_read} / ${result.extraction_metadata.bytes_limit}`);
-
       // Validation: Bet365 is a global operator, should detect multiple markets
       const expectedCodes = ["GB", "DE", "ES", "IT", "IE", "BR", "CA", "AU"];
       const detectedCodes = new Set(result.detected_markets.map((m) => m.market_code));
@@ -162,7 +157,7 @@ describe("Step 3 Live Domain Validation", () => {
       log(`Found: ${foundCount} (${expectedCodes.filter((code) => detectedCodes.has(code)).join(", ")})`);
     } else {
       log(`\nError: ${result.error}`);
-      log(`Fetch Status: ${result.fetch_status}`);
+      if (result.detail) log(`Detail: ${result.detail}`);
       log("### VALIDATION: ❌ FAIL (fetch or parse error)");
     }
   });
@@ -196,10 +191,6 @@ describe("Step 3 Live Domain Validation", () => {
       log(`\n### Secondary Pages Fetched`);
       log(`- Count: ${result.extraction_metadata.secondary_pages_used.length}`);
 
-      log(`\n### Fetch Metadata`);
-      log(`- Primary Status: ${result.extraction_metadata.primary_fetch_status}`);
-      log(`- Bytes Read: ${result.extraction_metadata.bytes_read} / ${result.extraction_metadata.bytes_limit}`);
-
       // Validation: BetVictor is European, should detect multiple EU markets
       const expectedCodes = ["GB", "DE", "SE", "IT", "PT"];
       const detectedCodes = new Set(result.detected_markets.map((m) => m.market_code));
@@ -210,7 +201,7 @@ describe("Step 3 Live Domain Validation", () => {
       log(`Found: ${foundCount} (${expectedCodes.filter((code) => detectedCodes.has(code)).join(", ")})`);
     } else {
       log(`\nError: ${result.error}`);
-      log(`Fetch Status: ${result.fetch_status}`);
+      if (result.detail) log(`Detail: ${result.detail}`);
       log("### VALIDATION: ❌ FAIL (fetch or parse error)");
     }
   });

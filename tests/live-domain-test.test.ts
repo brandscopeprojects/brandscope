@@ -22,8 +22,7 @@ describe("Live Domain Testing", () => {
             `Countries: ${result.detected_markets.map((m) => m.market_code).join(", ")}`
           );
         }
-        report.push(`Fetch Status: ${result.extraction_metadata.primary_fetch_status}`);
-        report.push(`Duration: ${result.extraction_metadata.fetch_duration_ms}ms`);
+        report.push(`Final URL: ${result.extraction_metadata.final_resolved_url}`);
       } else {
         report.push(`Error: ${result.error}`);
       }
@@ -50,8 +49,7 @@ describe("Live Domain Testing", () => {
           const markets = result.detected_markets.map((m) => m.market_code).join(", ");
           report.push(`Countries: ${markets.substring(0, 100)}...`);
         }
-        report.push(`Fetch Status: ${result.extraction_metadata.primary_fetch_status}`);
-        report.push(`Duration: ${result.extraction_metadata.fetch_duration_ms}ms`);
+        report.push(`Final URL: ${result.extraction_metadata.final_resolved_url}`);
       } else {
         report.push(`Error: ${result.error}`);
       }
@@ -79,8 +77,7 @@ describe("Live Domain Testing", () => {
             `Countries: ${result.detected_markets.map((m) => m.market_code).join(", ")}`
           );
         }
-        report.push(`Fetch Status: ${result.extraction_metadata.primary_fetch_status}`);
-        report.push(`Duration: ${result.extraction_metadata.fetch_duration_ms}ms`);
+        report.push(`Final URL: ${result.extraction_metadata.final_resolved_url}`);
       } else {
         report.push(`Error: ${result.error}`);
       }
