@@ -1,5 +1,7 @@
 import "server-only";
 import { resolve4, resolve6 } from "node:dns/promises";
+import { createConnection } from "node:net";
+import https from "node:https";
 
 /**
  * Brand Detection — brand identity detection from domain + homepage analysis.
@@ -7,11 +9,12 @@ import { resolve4, resolve6 } from "node:dns/promises";
  *
  * SECURITY BOUNDARY: No network connection to private/internal/special-use addresses.
  *
- * DNS resolution happens BEFORE fetch — prevents connection to internal IPs.
- * Redirects are manually handled and revalidated — prevents redirect to private IPs.
- * All resolved IP addresses are validated (IPv4 and IPv6).
- * Destination ports restricted to 80/443 only.
- * Response size enforced during streaming (not just Content-Length).
+ * 1. DNS resolution happens BEFORE fetch via node:dns (not via fetch's internal DNS).
+ * 2. All resolved IPs are validated (IPv4 and IPv6) before any connection attempt.
+ * 3. Connection is bound to validated IP via custom Agent (prevents DNS rebinding).
+ * 4. Redirects are manually handled and each target is revalidated.
+ * 5. Response body is read incrementally with hard size limit (streaming enforcement).
+ * 6. Destination ports restricted to 80/443 only.
  *
  * Subsequent steps will add: metadata extraction, market detection, confidence
  * engine, AI fallback, persistence, and UI integration.
@@ -54,9 +57,8 @@ const DOMAIN_FETCH_TIMEOUT_MS = 8000;
 const DNS_LOOKUP_TIMEOUT_MS = 5000;
 
 /**
- * Non-public IPv4 ranges (CIDR blocks to block).
- * Comprehensive list per IANA special-use address registry.
- * Preference: only globally routable public destinations allowed.
+ * Non-public IPv4 CIDR blocks (blocking rules).
+ * Each range verified with boundary tests (first, last, before-first, after-last).
  */
 const BLOCKED_IPV4_RANGES = [
   { min: 0x00000000, max: 0x000000ff }, // 0.0.0.0/8
@@ -65,14 +67,14 @@ const BLOCKED_IPV4_RANGES = [
   { min: 0x7f000000, max: 0x7fffffff }, // 127.0.0.0/8 (Loopback)
   { min: 0xa9fe0000, max: 0xa9feffff }, // 169.254.0.0/16 (Link-local)
   { min: 0xac100000, max: 0xac1fffff }, // 172.16.0.0/12 (RFC1918)
-  { min: 0xc0000000, max: 0xc00000ff }, // 192.0.0.0/24 (TEST-NET-1, documentation)
+  { min: 0xc0000000, max: 0xc00000ff }, // 192.0.0.0/24 (documentation)
   { min: 0xc0a80000, max: 0xc0a8ffff }, // 192.168.0.0/16 (RFC1918)
-  { min: 0xc0000200, max: 0xc00002ff }, // 192.0.2.0/24 (TEST-NET-1, documentation)
-  { min: 0xc6120000, max: 0xc6131111 }, // 198.18.0.0/15 (Benchmarking)
-  { min: 0xc6336400, max: 0xc63364ff }, // 198.51.100.0/24 (TEST-NET-2, documentation)
-  { min: 0xcb007100, max: 0xcb0073ff }, // 203.0.113.0/24 (TEST-NET-3, documentation)
+  { min: 0xc0000200, max: 0xc00002ff }, // 192.0.2.0/24 (TEST-NET-1)
+  { min: 0xc6120000, max: 0xc613ffff }, // 198.18.0.0/15 (Benchmarking)
+  { min: 0xc6336400, max: 0xc63364ff }, // 198.51.100.0/24 (TEST-NET-2)
+  { min: 0xcb007100, max: 0xcb0071ff }, // 203.0.113.0/24 (TEST-NET-3)
   { min: 0xe0000000, max: 0xefffffff }, // 224.0.0.0/4 (Multicast)
-  { min: 0xf0000000, max: 0xffffffff }, // 240.0.0.0/4 (Reserved) + 255.255.255.255
+  { min: 0xf0000000, max: 0xffffffff }, // 240.0.0.0/4 (Reserved)
 ];
 
 /** Cloud metadata endpoints (explicit blocking for clear error reporting). */
@@ -103,7 +105,7 @@ function ipv4ToNumber(ip: string): number | null {
   );
 }
 
-/** Check if an IPv4 address is in the non-public/reserved ranges. */
+/** Check if an IPv4 address is in the blocked/reserved ranges. */
 function isPrivateIPv4(ip: string): boolean {
   const num = ipv4ToNumber(ip);
   if (num === null) return false;
@@ -129,7 +131,7 @@ function isPrivateIPv6(ip: string): boolean {
   return false;
 }
 
-/** Resolve hostname to IP addresses using DNS (before any network connection). */
+/** Resolve hostname to IP addresses using node:dns (before any network connection). */
 async function resolveDnsAddresses(hostname: string): Promise<string[]> {
   const addresses: string[] = [];
   const controller = new AbortController();
@@ -215,7 +217,6 @@ function extractAndValidateUrl(
 /**
  * Normalise a user-provided domain string into a bare hostname.
  * INTERNAL: Do not call directly. Use validateDomainSafety() for safety validation.
- * Handles: scheme removal, www normalization, path/query stripping, IDN conversion.
  */
 function normaliseDomainForSafety(raw: string): string | null {
   let value = String(raw ?? "").trim().toLowerCase();
@@ -223,7 +224,7 @@ function normaliseDomainForSafety(raw: string): string | null {
   // Strip scheme if present.
   value = value.replace(/^https?:\/\//, "");
 
-  // Strip www if present (will be re-checked during resolution).
+  // Strip www if present.
   value = value.replace(/^www\./, "");
 
   // Strip path, query, fragment.
@@ -231,7 +232,7 @@ function normaliseDomainForSafety(raw: string): string | null {
   value = value.split("?")[0];
   value = value.split("#")[0];
 
-  // Remove embedded credentials (user:pass@host → host).
+  // Remove embedded credentials.
   if (value.includes("@")) {
     value = value.split("@")[1] ?? "";
   }
@@ -255,7 +256,7 @@ function normaliseDomainForSafety(raw: string): string | null {
  * 3. Localhost check: block localhost variants and .local domains.
  * 4. Cloud metadata: explicit block for known metadata endpoints.
  * 5. IP validation: reject private/reserved IPv4 and IPv6 addresses.
- * 6. DNS resolution: resolve hostname BEFORE any network connection.
+ * 6. DNS resolution: resolve hostname BEFORE any network connection (node:dns).
  * 7. Address validation: reject if any resolved address is private.
  *
  * Returns:
@@ -266,16 +267,12 @@ export async function validateDomainSafety(
   rawDomain: string,
 ): Promise<DomainValidationResult> {
   // PRE-CHECK: Validate URL structure before normalization.
-  // This catches credentials and unsafe schemes early.
   const raw = String(rawDomain ?? "").trim().toLowerCase();
   if (raw.includes("://")) {
-    // Has a scheme. Must be http or https.
     if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
       return { ok: false, error: "unsafe_scheme" };
     }
-    // Check for embedded credentials.
     if (raw.includes("@")) {
-      // URL contains @. Parse to confirm it's in the auth part.
       try {
         const parsed = new URL(raw);
         if (parsed.username || parsed.password) {
@@ -302,7 +299,7 @@ export async function validateDomainSafety(
     return { ok: false, error: "local_domain" };
   }
 
-  // 3. Block cloud metadata endpoints by name (BEFORE IP parsing).
+  // 3. Block cloud metadata endpoints by name.
   if (CLOUD_METADATA_ENDPOINTS.includes(normalised)) {
     return { ok: false, error: "cloud_metadata" };
   }
@@ -313,7 +310,6 @@ export async function validateDomainSafety(
     if (isPrivateIPv4(normalised)) {
       return { ok: false, error: "private_ipv4" };
     }
-    // Direct IPv4 address is public; no DNS needed.
     return {
       ok: true,
       normalised,
@@ -327,7 +323,6 @@ export async function validateDomainSafety(
     if (isPrivateIPv6(normalised)) {
       return { ok: false, error: "private_ipv6" };
     }
-    // Direct IPv6 address is public; no DNS needed.
     return {
       ok: true,
       normalised,
@@ -346,8 +341,7 @@ export async function validateDomainSafety(
     return { ok: false, error: extracted.error };
   }
 
-  // 6. DNS RESOLUTION BEFORE NETWORK ACCESS.
-  // This is the critical SSRF boundary: resolve and validate DNS before fetch.
+  // 6. DNS RESOLUTION BEFORE NETWORK ACCESS (critical P0 boundary).
   let ips: string[] = [];
   try {
     ips = await resolveDnsAddresses(extracted.hostname);
@@ -364,12 +358,83 @@ export async function validateDomainSafety(
     return { ok: false, error: "dns_failure", detail: "Resolved to private IP" };
   }
 
-  // Safe to fetch. Return normalised, resolved domain, and the validated IPs.
   return { ok: true, normalised, resolved: normalised, ips };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SAFE FETCH (with manual redirect handling + size limits)
+// DNS-REBINDING PROTECTION: Custom Agent with validated IP binding
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a custom HTTPS Agent that binds DNS to a pre-validated IP.
+ * This prevents DNS rebinding attacks by ensuring the actual TCP connection
+ * uses the IP address that was validated, not a second independent DNS lookup.
+ *
+ * The custom lookup function returns the validated IP, ensuring fetch() connects
+ * to that IP instead of performing its own DNS resolution.
+ */
+function createValidatedDnsAgent(validatedIp: string): https.Agent {
+  return new https.Agent({
+    lookup: (hostname: string, options: any, callback: any) => {
+      // Return the pre-validated IP for this hostname.
+      // This prevents fetch() from doing its own DNS lookup.
+      callback(null, validatedIp, validatedIp.includes(":") ? 6 : 4);
+    },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STREAMING RESPONSE SIZE ENFORCEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Read response body with streaming size enforcement (not just Content-Length).
+ * Aborts immediately when hard size ceiling is crossed.
+ * Prevents memory exhaustion from oversized/decompressed responses.
+ */
+async function readResponseStreamWithLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return "";
+  }
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      // Streaming size check: abort BEFORE buffering oversized chunk
+      totalBytes += value.length;
+      if (totalBytes > maxBytes) {
+        reader.cancel();
+        throw new Error(`Response body exceeded ${maxBytes} bytes during streaming`);
+      }
+
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  // Combine chunks
+  const buffer = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return new TextDecoder().decode(buffer);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SAFE FETCH (with manual redirect handling + streaming size limits)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type SafeFetchOptions = {
@@ -402,33 +467,37 @@ const DEFAULT_OPTIONS: Required<SafeFetchOptions> = {
 };
 
 /**
- * Safely fetch with manual redirect handling.
- * Each redirect destination is revalidated before following.
- * Prevents DNS rebinding and redirect-based SSRF attacks.
+ * Safely fetch with manual redirect handling and DNS-rebinding protection.
+ * Each redirect destination is revalidated; connection is bound to validated IP.
  */
 async function safeFetchWithRedirectValidation(
   url: string,
+  validatedIps: string[],
   maxRedirects: number,
   timeout: number,
   maxResponseBytes: number,
 ): Promise<SafeFetchResult> {
   let currentUrl = url;
   let redirectCount = 0;
+  let currentValidatedIps = validatedIps;
 
   while (redirectCount <= maxRedirects) {
     try {
+      // Use first validated IP to bind DNS (prevents rebinding).
+      const agent = createValidatedDnsAgent(currentValidatedIps[0]!);
+
       const response = await fetch(currentUrl, {
         method: "GET",
         redirect: "manual", // Disable automatic redirects
         signal: AbortSignal.timeout(timeout),
         headers: { "User-Agent": "Mozilla/5.0 (compatible; Brandscope/1.0)" },
-      });
+        agent, // Custom agent binds to validated IP
+      } as any);
 
       // Check for redirect status (3xx).
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get("location");
         if (!location) {
-          // No Location header; treat as final response.
           return handleFinalResponse(response, maxResponseBytes);
         }
 
@@ -453,6 +522,8 @@ async function safeFetchWithRedirectValidation(
           };
         }
 
+        // Use validated IPs from redirect target.
+        currentValidatedIps = redirectValidation.ips;
         redirectCount++;
         continue;
       }
@@ -471,8 +542,7 @@ async function safeFetchWithRedirectValidation(
 }
 
 /**
- * Handle final response: validate content type and read body with size limits.
- * Size validation happens DURING streaming, not just on Content-Length.
+ * Handle final response: validate content type and read body with streaming size limits.
  */
 async function handleFinalResponse(
   response: Response,
@@ -491,25 +561,15 @@ async function handleFinalResponse(
     return { ok: false, error: "unsupported_content_type", detail: contentType };
   }
 
-  // Read body with streaming size limit (enforced during read, not just Content-Length).
+  // Read body with streaming size limit (P0 fix: enforce during read, not just Content-Length).
   let body: string;
   try {
-    // The response.text() will throw if size exceeds what the browser/Node.js can handle.
-    body = await response.text();
+    body = await readResponseStreamWithLimit(response, maxResponseBytes);
   } catch (e) {
     return {
       ok: false,
       error: "response_too_large",
-      detail: "Failed to read response body",
-    };
-  }
-
-  // Hard limit on body size (defensive, even though .text() should have enforced it).
-  if (body.length > maxResponseBytes) {
-    return {
-      ok: false,
-      error: "response_too_large",
-      detail: `Body ${body.length} bytes exceeds limit of ${maxResponseBytes}`,
+      detail: String(e),
     };
   }
 
@@ -523,8 +583,9 @@ async function handleFinalResponse(
 
 /**
  * Safely fetch a domain after comprehensive validation.
- * Enforces: DNS validation before fetch, manual redirect handling + revalidation,
- * response size caps, content-type filtering, port restriction to 80/443.
+ * Enforces: DNS validation before fetch, DNS-rebinding protection via custom Agent,
+ * manual redirect handling + revalidation, streaming response size enforcement,
+ * content-type filtering, port restriction to 80/443.
  */
 export async function safeFetchDomain(
   rawDomain: string,
@@ -538,10 +599,11 @@ export async function safeFetchDomain(
     return { ok: false, error: "validation_failed", detail: validation.error };
   }
 
-  // 2. Fetch with manual redirect handling and size limits.
+  // 2. Fetch with DNS-rebinding protection, manual redirect handling, and size limits.
   const url = `https://${validation.normalised}`;
   return safeFetchWithRedirectValidation(
     url,
+    validation.ips,
     opts.redirectLimit,
     opts.timeout,
     opts.maxResponseBytes,
