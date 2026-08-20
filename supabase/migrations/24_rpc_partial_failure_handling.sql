@@ -32,8 +32,7 @@ BEGIN
   IF v_expected IS NULL THEN RETURN false; END IF;
 
   -- Update progress: (completed + failed + partial) / expected * 100
-  v_terminal := array_cat(array_cat(v_completed, coalesce(v_failed, '{}'), false),
-                           coalesce(v_partial, '{}'), false);
+  v_terminal := v_completed || coalesce(v_failed, '{}') || coalesce(v_partial, '{}');
   UPDATE scan_jobs
      SET progress_percentage = LEAST(100, (cardinality(v_terminal) * 100) / GREATEST(1, cardinality(v_expected)))
    WHERE id = p_scan_job_id;
