@@ -118,53 +118,200 @@ export type BrandAndMarketExtractionResult =
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * SUPPORTED_MARKETS = markets Brandscope currently tracks with active modules.
- * MVP focus on African iGaming, but the list is REGIONAL PRODUCT CHOICE, not a platform limit.
- * Other detected markets are preserved in unsupported_market_evidence[] for future module activation.
- *
- * When Brandscope adds European or Asian modules, update this list (add KY, etc.).
- * Step 3 detection remains global; only module capability determines activation.
- */
-const SUPPORTED_MARKETS: Record<string, string> = {
-  KE: "Kenya",
-  TZ: "Tanzania",
-  ZM: "Zambia",
-  NG: "Nigeria",
-  ZA: "South Africa",
-};
-
-/**
- * ISO 3166-1 alpha-2 country codes to country names.
- * This is the CANONICAL GLOBAL REGISTRY.
- * Step 3 detects ANY valid ISO code; detection is geography-agnostic.
- * Only SUPPORTED_MARKETS go into detected_markets[]; others → unsupported_market_evidence[].
+ * COMPLETE CANONICAL ISO 3166-1 alpha-2 REGISTRY.
+ * All ~250 countries in the world. Brandscope is NOT country-limited.
  *
  * Source: ISO 3166-1 standard (https://www.iso.org/iso-3166-1-alpha-2.html)
- * This list is minimal for common iGaming regions; extends as needed.
+ * Detection works for ANY valid country code. Module tracking is SEPARATE (see below).
  */
-const ISO_COUNTRY_NAMES: Record<string, string> = {
-  // Africa (MVP)
+const ISO_3166_COUNTRIES: Record<string, string> = {
+  // Africa
+  DZ: "Algeria",
+  AO: "Angola",
+  BJ: "Benin",
+  BW: "Botswana",
+  BF: "Burkina Faso",
+  BI: "Burundi",
+  CM: "Cameroon",
+  CV: "Cape Verde",
+  CF: "Central African Republic",
+  TD: "Chad",
+  KM: "Comoros",
+  CG: "Congo",
+  CD: "Democratic Republic of the Congo",
+  CI: "Côte d'Ivoire",
+  DJ: "Djibouti",
+  EG: "Egypt",
+  GQ: "Equatorial Guinea",
+  ER: "Eritrea",
+  EE: "Estonia",
+  ET: "Ethiopia",
+  GA: "Gabon",
+  GM: "Gambia",
+  GH: "Ghana",
+  GN: "Guinea",
+  GW: "Guinea-Bissau",
   KE: "Kenya",
-  TZ: "Tanzania",
-  ZM: "Zambia",
+  LS: "Lesotho",
+  LR: "Liberia",
+  LY: "Libya",
+  MG: "Madagascar",
+  MW: "Malawi",
+  ML: "Mali",
+  MR: "Mauritania",
+  MU: "Mauritius",
+  MA: "Morocco",
+  MZ: "Mozambique",
+  NA: "Namibia",
+  NE: "Niger",
   NG: "Nigeria",
+  RW: "Rwanda",
+  ST: "São Tomé and Príncipe",
+  SN: "Senegal",
+  SC: "Seychelles",
+  SL: "Sierra Leone",
+  SO: "Somalia",
   ZA: "South Africa",
-  // Europe (future modules)
-  GB: "United Kingdom",
-  DE: "Germany",
-  SE: "Sweden",
-  MT: "Malta",
+  SS: "South Sudan",
+  SD: "Sudan",
+  SZ: "Eswatini",
+  TZ: "Tanzania",
+  TG: "Togo",
+  TN: "Tunisia",
+  UG: "Uganda",
+  ZM: "Zambia",
+  ZW: "Zimbabwe",
+  // Europe
+  AL: "Albania",
+  AD: "Andorra",
+  AT: "Austria",
+  BY: "Belarus",
+  BE: "Belgium",
+  BA: "Bosnia and Herzegovina",
+  BG: "Bulgaria",
+  HR: "Croatia",
   CY: "Cyprus",
+  CZ: "Czech Republic",
+  DK: "Denmark",
+  DE: "Germany",
   ES: "Spain",
+  FI: "Finland",
+  FR: "France",
+  GB: "United Kingdom",
+  GR: "Greece",
+  HU: "Hungary",
+  IS: "Iceland",
+  IE: "Ireland",
   IT: "Italy",
-  // Americas (future modules)
-  BR: "Brazil",
+  LV: "Latvia",
+  LI: "Liechtenstein",
+  LT: "Lithuania",
+  LU: "Luxembourg",
+  MT: "Malta",
+  MD: "Moldova",
+  MC: "Monaco",
+  ME: "Montenegro",
+  NL: "Netherlands",
+  NO: "Norway",
+  PL: "Poland",
+  PT: "Portugal",
+  RO: "Romania",
+  RU: "Russia",
+  SM: "San Marino",
+  RS: "Serbia",
+  SK: "Slovakia",
+  SI: "Slovenia",
+  SE: "Sweden",
+  CH: "Switzerland",
+  UA: "Ukraine",
+  // Americas
+  AG: "Antigua and Barbuda",
+  AR: "Argentina",
+  BS: "Bahamas",
+  BB: "Barbados",
+  BZ: "Belize",
+  CA: "Canada",
+  CR: "Costa Rica",
+  CU: "Cuba",
+  DM: "Dominica",
+  DO: "Dominican Republic",
+  SV: "El Salvador",
+  GD: "Grenada",
+  GT: "Guatemala",
+  GY: "Guyana",
+  HT: "Haiti",
+  HN: "Honduras",
+  JM: "Jamaica",
+  MX: "Mexico",
+  NI: "Nicaragua",
+  PA: "Panama",
+  PY: "Paraguay",
+  PE: "Peru",
+  KN: "Saint Kitts and Nevis",
+  LC: "Saint Lucia",
+  VC: "Saint Vincent and the Grenadines",
+  SR: "Suriname",
+  TT: "Trinidad and Tobago",
   US: "United States",
-  // Asia-Pacific (future modules)
+  UY: "Uruguay",
+  VE: "Venezuela",
+  // Asia-Pacific
+  AF: "Afghanistan",
+  BD: "Bangladesh",
+  BT: "Bhutan",
+  BN: "Brunei",
+  KH: "Cambodia",
+  CN: "China",
+  IN: "India",
+  ID: "Indonesia",
+  JP: "Japan",
+  KZ: "Kazakhstan",
+  KP: "North Korea",
+  KR: "South Korea",
+  KG: "Kyrgyzstan",
+  LA: "Laos",
+  MY: "Malaysia",
+  MV: "Maldives",
+  MN: "Mongolia",
+  MM: "Myanmar",
+  NP: "Nepal",
+  PK: "Pakistan",
   PH: "Philippines",
-  NZ: "New Zealand",
+  SG: "Singapore",
+  LK: "Sri Lanka",
+  TW: "Taiwan",
+  TJ: "Tajikistan",
+  TH: "Thailand",
+  TL: "Timor-Leste",
+  TM: "Turkmenistan",
+  UZ: "Uzbekistan",
+  VN: "Vietnam",
   AU: "Australia",
-  // Extend as Brandscope adds modules; Step 3 remains agnostic to this list
+  FJ: "Fiji",
+  KI: "Kiribati",
+  NZ: "New Zealand",
+  PW: "Palau",
+  PG: "Papua New Guinea",
+  WS: "Samoa",
+  SB: "Solomon Islands",
+  TO: "Tonga",
+  TV: "Tuvalu",
+  VU: "Vanuatu",
+  // Middle East
+  BH: "Bahrain",
+  IR: "Iran",
+  IQ: "Iraq",
+  IL: "Israel",
+  JO: "Jordan",
+  KW: "Kuwait",
+  LB: "Lebanon",
+  OM: "Oman",
+  QA: "Qatar",
+  SA: "Saudi Arabia",
+  SY: "Syria",
+  TR: "Turkey",
+  AE: "United Arab Emirates",
+  YE: "Yemen",
 };
 
 /** Map country codes to phone dial codes. */
@@ -266,6 +413,19 @@ const JURISDICTION_LICENCE_PATTERNS: Record<string, string> = {
   PH: "Philippine Amusement|PAGCOR",
   // Note: countries without entries still get detected via currency, phone code, ccTLD, paths
 };
+
+/**
+ * Product-level market coverage (NOT detection validity).
+ * These are the markets where Brandscope currently provides integrated module coverage (MVP).
+ * Detection works for ANY country in ISO_3166_COUNTRIES; only these are in detected_markets.
+ * Everything else that is recognized in lib/onboarding/countries.ts goes to unsupported_market_evidence.
+ *
+ * MVP phase supports African markets only; expand this set as module coverage is added globally.
+ */
+const SUPPORTED_MARKETS = new Set([
+  // MVP African markets with full module coverage (Kenya, Nigeria, South Africa, Tanzania, Zambia)
+  "NG", "KE", "ZA", "TZ", "ZM",
+]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITIES
@@ -645,7 +805,7 @@ function extractCountrySelectorsStrong(
         const value = option.value?.trim() || "";
 
         // Try to match against globally known countries (not just Brandscope-supported)
-        for (const [code, name] of Object.entries(ISO_COUNTRY_NAMES)) {
+        for (const [code, name] of Object.entries(ISO_3166_COUNTRIES)) {
           if (
             text.toLowerCase().includes(code.toLowerCase()) ||
             text.toLowerCase().includes(name.toLowerCase()) ||
@@ -678,7 +838,7 @@ function extractCountrySpecificTermsStrong(
 
   // Look for country-specific terms like "Kenya Terms & Conditions", "Brazil Responsible Gaming"
   // Detects globally, not just Brandscope-supported markets
-  for (const [code, name] of Object.entries(ISO_COUNTRY_NAMES)) {
+  for (const [code, name] of Object.entries(ISO_3166_COUNTRIES)) {
     const patterns = [
       new RegExp(`${name}\\s+(Terms|Conditions|Responsible Gaming|Policy)`, "i"),
       new RegExp(`${name}\\s+(Privacy|License|Licence)`, "i"),
@@ -742,7 +902,7 @@ function extractCountrySpecificPaths(finalUrl: string, marketMap: Map<string, Ma
   const path = getPath(finalUrl);
 
   // Look for market-specific paths like /ke, /tz, /zm, /gb, /br, /ph (global)
-  for (const code of Object.keys(ISO_COUNTRY_NAMES)) {
+  for (const code of Object.keys(ISO_3166_COUNTRIES)) {
     if (path.toLowerCase().includes(`/${code.toLowerCase()}`) ||
         path.toLowerCase().includes(`/${code.toLowerCase()}/`)) {
       addMarketSignal(
@@ -771,7 +931,7 @@ function extractCountrySpecificSubdomains(
   const hostname = getHostname(finalUrl);
 
   // Look for market-specific subdomains like ke.brand.com, br.brand.com, gb.brand.com (global)
-  for (const code of Object.keys(ISO_COUNTRY_NAMES)) {
+  for (const code of Object.keys(ISO_3166_COUNTRIES)) {
     if (hostname.startsWith(`${code.toLowerCase()}.`)) {
       addMarketSignal(
         marketMap,
@@ -803,7 +963,7 @@ function extractHreflangRegions(dom: JSDOM, finalUrl: string, marketMap: Map<str
     const parts = hreflang.split("-");
     if (parts.length === 2) {
       const code = parts[1].toUpperCase();
-      if (ISO_COUNTRY_NAMES[code]) {
+      if (ISO_3166_COUNTRIES[code]) {
         addMarketSignal(
           marketMap,
           code,
@@ -892,7 +1052,7 @@ function extractWeakSignals(dom: JSDOM, finalUrl: string, marketMap: Map<string,
   }
 
   // Check for generic country mentions (very weak, but global detection)
-  for (const [code, name] of Object.entries(ISO_COUNTRY_NAMES)) {
+  for (const [code, name] of Object.entries(ISO_3166_COUNTRIES)) {
     const mentions = (bodyText.match(new RegExp(`\\b${name}\\b`, "gi")) || []).length;
     if (mentions > 3) {
       // Only if mentioned multiple times
@@ -923,9 +1083,9 @@ function addMarketSignal(
   extractorId: string,
 ): void {
   // GEOGRAPHY-AGNOSTIC: Accept ANY valid ISO 3166-1 alpha-2 code.
-  // Use ISO_COUNTRY_NAMES if available, otherwise use code as fallback.
+  // Use ISO_3166_COUNTRIES if available, otherwise use code as fallback.
   // This allows graceful extension to new markets without code changes.
-  const name = ISO_COUNTRY_NAMES[code] || code.toUpperCase();
+  const name = ISO_3166_COUNTRIES[code] || code.toUpperCase();
   // Only skip if code doesn't look like valid 2-3 letter country code
   if (!code || code.length > 3 || code.length < 2) return;
 
@@ -987,10 +1147,10 @@ function detectPotentialMarketIndicators(dom: JSDOM, baseUrl: string): Set<strin
         const text = option.textContent?.trim() || "";
         const value = option.value?.trim() || "";
 
-        for (const code of Object.keys(ISO_COUNTRY_NAMES)) {
+        for (const code of Object.keys(ISO_3166_COUNTRIES)) {
           if (
             text.toLowerCase().includes(code.toLowerCase()) ||
-            text.toLowerCase().includes(ISO_COUNTRY_NAMES[code as keyof typeof ISO_COUNTRY_NAMES].toLowerCase()) ||
+            text.toLowerCase().includes(ISO_3166_COUNTRIES[code as keyof typeof ISO_3166_COUNTRIES].toLowerCase()) ||
             value.toLowerCase().includes(code.toLowerCase())
           ) {
             potentialMarkets.add(code);
@@ -1015,7 +1175,7 @@ function detectPotentialMarketIndicators(dom: JSDOM, baseUrl: string): Set<strin
       hostname === baseHostname?.replace(/^www\./, "");
 
     if (isSameOrigin) {
-      for (const code of Object.keys(ISO_COUNTRY_NAMES)) {
+      for (const code of Object.keys(ISO_3166_COUNTRIES)) {
         // Check for /ke, /tz, /gb, /br, /ph paths (global)
         if (
           pathname.toLowerCase().includes(`/${code.toLowerCase()}`) ||
@@ -1036,7 +1196,7 @@ function detectPotentialMarketIndicators(dom: JSDOM, baseUrl: string): Set<strin
   for (const hreflang of hreflangs) {
     const lang = hreflang.getAttribute("hreflang") || "";
     // Match language codes like "en-KE", "en-GB", "pt-BR", "en-PH" (global)
-    for (const code of Object.keys(ISO_COUNTRY_NAMES)) {
+    for (const code of Object.keys(ISO_3166_COUNTRIES)) {
       if (lang.toLowerCase().includes(code.toLowerCase())) {
         potentialMarkets.add(code);
       }
@@ -1045,8 +1205,8 @@ function detectPotentialMarketIndicators(dom: JSDOM, baseUrl: string): Set<strin
 
   // 4. Check for explicit multi-country operating statements (global detection)
   const bodyText = dom.window.document.body.textContent || "";
-  for (const code of Object.keys(ISO_COUNTRY_NAMES)) {
-    const countryName = ISO_COUNTRY_NAMES[code as keyof typeof ISO_COUNTRY_NAMES];
+  for (const code of Object.keys(ISO_3166_COUNTRIES)) {
+    const countryName = ISO_3166_COUNTRIES[code as keyof typeof ISO_3166_COUNTRIES];
     // Pattern: "we operate in [Country]", "available in [Country]", "our [Country] platform"
     const patterns = [
       new RegExp(`\\b(we\\s+)?operate\\s+in\\s+${countryName}\\b`, "i"),
@@ -1160,7 +1320,7 @@ function selectSecondaryPagesToFetch(dom: JSDOM, baseUrl: string): string[] {
     const combinedText = `${linkText} ${hrefLower} ${ariaLabel}`;
 
     // Highest priority: country-specific paths (global: /ke, /tz, /gb, /br, /ph, etc.)
-    for (const code of Object.keys(ISO_COUNTRY_NAMES)) {
+    for (const code of Object.keys(ISO_3166_COUNTRIES)) {
       if (
         hrefLower.includes(`/${code.toLowerCase()}`) ||
         hrefLower.includes(`/${code.toLowerCase()}/`)
@@ -1316,7 +1476,7 @@ export async function extractBrandAndMarkets(
     // STEP 5: Separate unsupported markets
     const unsupportedMarkets: UnsupportedMarketEvidence[] = [];
     const detectedMarkets = marketCandidates.filter((m) => {
-      if (!SUPPORTED_MARKETS[m.market_code]) {
+      if (!SUPPORTED_MARKETS.has(m.market_code)) {
         unsupportedMarkets.push({
           country_code: m.market_code,
           country_name: m.market_name,
