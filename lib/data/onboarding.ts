@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { syncBrandMarkets } from "@/lib/data/brand-markets";
 
 export type ProvisionBrandInput = {
   userId: string;
@@ -33,7 +34,11 @@ export async function provisionBrand(input: ProvisionBrandInput): Promise<string
   if (error) {
     throw new Error(`provision_brand failed: ${error.message}`);
   }
-  return data as string;
+  const brandId = data as string;
+  // Bounded dual-write (Gate 1 closure) — brands.market stays authoritative;
+  // keep brand_markets in sync so it never goes stale. See lib/data/brand-markets.ts.
+  await syncBrandMarkets(brandId, input.markets);
+  return brandId;
 }
 
 export type AddBrandInput = {
@@ -76,5 +81,7 @@ export async function addBrandToOrg(input: AddBrandInput): Promise<string> {
   if (error || !data) {
     throw new Error(`add brand failed: ${error?.message ?? "no row returned"}`);
   }
-  return data.id as string;
+  const brandId = data.id as string;
+  await syncBrandMarkets(brandId, input.markets);
+  return brandId;
 }

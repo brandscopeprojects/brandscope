@@ -10,6 +10,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireBrandAdmin } from "@/lib/auth";
 import { getCurrentBrand } from "@/lib/data/brand";
+import { syncBrandMarkets } from "@/lib/data/brand-markets";
 import { MARKET_VALUES } from "@/lib/onboarding/constants";
 import {
   PREFERENCE_MODULE_KEYS,
@@ -104,6 +105,11 @@ export async function updateBrandProfile(
     .eq("id", brand.id);
 
   if (error) return { ok: false, error: error.message };
+
+  // Bounded dual-write (Gate 1 closure) — brands.market (just updated above,
+  // via the user-session RLS client) stays authoritative; keep brand_markets
+  // in sync so it never goes stale. See lib/data/brand-markets.ts.
+  await syncBrandMarkets(brand.id, markets);
 
   revalidatePath("/admin/settings");
   return { ok: true };

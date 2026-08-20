@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   LineChart,
   SlidersHorizontal,
+  Swords,
 } from "lucide-react";
 
 export type InternalNavItem = {
@@ -28,6 +29,11 @@ export const INTERNAL_NAV: InternalNavItem[] = [
   { label: "Agent Control", href: "/brandscope-admin/agents", icon: Bot },
   { label: "API Management", href: "/brandscope-admin/api-management", icon: Plug },
   { label: "Knowledge Base", href: "/brandscope-admin/knowledge-base", icon: BookOpen },
+  {
+    label: "Competitive Intelligence",
+    href: "/brandscope-admin/competitive-intelligence",
+    icon: Swords,
+  },
   { label: "Security Centre", href: "/brandscope-admin/security", icon: ShieldCheck, superAdminOnly: true },
   { label: "Revenue", href: "/brandscope-admin/revenue", icon: LineChart },
 ];

@@ -2406,6 +2406,65 @@ export type Database = {
         }
         Relationships: []
       }
+      market_power_acquisition_channels: {
+        Row: {
+          created_at: string
+          is_active: boolean
+          key: string
+          label: string
+        }
+        Insert: {
+          created_at?: string
+          is_active?: boolean
+          key: string
+          label: string
+        }
+        Update: {
+          created_at?: string
+          is_active?: boolean
+          key?: string
+          label?: string
+        }
+        Relationships: []
+      }
+      market_power_keyword_clusters: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          is_active: boolean
+          key: string
+          label: string
+          market_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          is_active?: boolean
+          key: string
+          label: string
+          market_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          is_active?: boolean
+          key?: string
+          label?: string
+          market_code?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_power_keyword_clusters_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       market_power_methodology_content: {
         Row: {
           body: string
@@ -2594,6 +2653,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      market_power_product_categories: {
+        Row: {
+          created_at: string
+          is_active: boolean
+          key: string
+          label: string
+        }
+        Insert: {
+          created_at?: string
+          is_active?: boolean
+          key: string
+          label: string
+        }
+        Update: {
+          created_at?: string
+          is_active?: boolean
+          key?: string
+          label?: string
+        }
+        Relationships: []
       }
       market_power_scoring_config: {
         Row: {
