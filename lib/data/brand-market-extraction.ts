@@ -456,7 +456,53 @@ function extractMarketCandidates(dom: JSDOM, finalUrl: string): MarketCandidate[
   // 3. Extract weak signals
   extractWeakSignals(dom, finalUrl, marketMap);
 
-  return Array.from(marketMap.values());
+  // 4. Filter markets by eligibility: prevent weak-signal-only false positives
+  return filterMarketsByEligibility(Array.from(marketMap.values()));
+}
+
+/**
+ * Eligibility gate: only allow markets with sufficient evidence to be detected.
+ *
+ * Rules (P1 - Market Eligibility):
+ * - Currency alone (medium) → NOT eligible
+ * - hreflang alone (medium) → NOT eligible
+ * - Phone code alone (medium) → NOT eligible
+ * - ccTLD alone (weak) → NOT eligible
+ * - Generic mentions alone (weak) → NOT eligible
+ *
+ * Eligible if:
+ * - At least 1 strong signal (licence, explicit statement, country-specific terms, selector)
+ * - OR at least 2 medium signals from different types
+ *
+ * Weak/medium signals can remain as corroborating evidence even if ineligible.
+ */
+function filterMarketsByEligibility(markets: MarketCandidate[]): MarketCandidate[] {
+  return markets.filter((market) => {
+    const signals = market.signals;
+
+    // Count signals by strength
+    const strongSignals = signals.filter((s) => s.signal_strength === "strong");
+    const mediumSignals = signals.filter((s) => s.signal_strength === "medium");
+    const weakSignals = signals.filter((s) => s.signal_strength === "weak");
+
+    // Rule: at least 1 strong signal makes market eligible
+    if (strongSignals.length > 0) {
+      return true;
+    }
+
+    // Rule: at least 2 different types of medium signals makes market eligible
+    if (mediumSignals.length >= 2) {
+      // Check they're different types (not just 2x same signal type)
+      const mediumTypes = new Set(mediumSignals.map((s) => s.signal_type));
+      if (mediumTypes.size >= 2) {
+        return true;
+      }
+    }
+
+    // Rule: weak/medium-only signals → NOT eligible as detected market
+    // (but signals are retained for future Step 4 scoring/ambiguity resolution)
+    return false;
+  });
 }
 
 function extractCountrySelectorsStrong(
@@ -789,12 +835,63 @@ function addMarketSignal(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SECONDARY PAGE DECISION LOGIC
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Determine if homepage evidence is sufficient.
+ * Returns true if at least one market is detected with sufficient evidence.
+ */
+function isHomepageEvidenceSufficient(markets: MarketCandidate[]): boolean {
+  return markets.length > 0;
+}
+
+/**
+ * Deterministically select secondary pages to fetch if homepage is insufficient.
+ * Returns URLs of pages to fetch (max 3).
+ *
+ * Strategy: prioritize pages likely to contain country/licence/regulatory signals
+ */
+function selectSecondaryPagesToFetch(baseUrl: string): string[] {
+  const base = new URL(baseUrl);
+  const hostname = base.hostname;
+  const secondaryPaths = [
+    "/terms",
+    "/terms-and-conditions",
+    "/legal",
+    "/responsible-gaming",
+    "/licenses",
+    "/licences",
+    "/about",
+    "/compliance",
+  ];
+
+  const selected: string[] = [];
+  for (const path of secondaryPaths) {
+    if (selected.length >= 3) break;
+    selected.push(`https://${hostname}${path}`);
+  }
+
+  return selected;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN EXTRACTION PIPELINE
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Main entry point for brand + market extraction.
  * Continues directly from Step 2's safe-fetched homepage.
+ *
+ * Pipeline:
+ * 1. Fetch homepage via Step 2 (safeFetchDomain)
+ * 2. Extract brand + market candidates from homepage
+ * 3. If evidence insufficient, fetch up to 3 secondary pages (terms, legal, about)
+ * 4. Merge evidence from all pages
+ * 5. Return brand + market candidates with evidence
+ *
+ * Security: all fetches use Step 2's safe transport (SSRF-protected, redirects validated, size-limited)
+ * No homepage refetch: homepage fetched once, secondary pages only if needed
  *
  * @param domain User's input domain (will be validated/fetched via Step 2)
  * @returns Brand and market candidates with evidence
@@ -803,7 +900,7 @@ export async function extractBrandAndMarkets(
   domain: string,
 ): Promise<BrandAndMarketExtractionResult> {
   try {
-    // Step 1: Use Step 2's safe-fetch to obtain the homepage securely
+    // STEP 1: Fetch homepage via Step 2 safe-fetch
     const fetchResult = await safeFetchDomain(domain);
 
     if (!fetchResult.ok) {
@@ -814,24 +911,63 @@ export async function extractBrandAndMarkets(
       };
     }
 
-    // Step 2: Parse HTML using JSDOM
+    // STEP 2: Parse homepage HTML
     const dom = new JSDOM(fetchResult.body, {
-      url: domain, // Will use the redirect chain's final URL if available
+      url: domain,
       pretendToBeVisual: true,
     });
 
-    // Determine normalized domain and final URL
-    // (In future integration with Step 2, this will come from Step 2's result)
-    const finalUrl = domain; // TODO: update to use Step 2's final redirected URL
+    const finalUrl = domain;
     const normalizedDomain = domain.replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0];
 
-    // Step 3: Extract brand candidates
+    // STEP 3: Extract from homepage
     const brandCandidates = extractBrandCandidates(dom, finalUrl, normalizedDomain);
+    let marketCandidates = extractMarketCandidates(dom, finalUrl);
+    const secondaryPagesUsed: string[] = [];
 
-    // Step 4: Extract market candidates
-    const marketCandidates = extractMarketCandidates(dom, finalUrl);
+    // STEP 4: Check if homepage evidence is sufficient
+    if (!isHomepageEvidenceSufficient(marketCandidates)) {
+      // Deterministically select secondary pages to fetch (max 3)
+      const secondaryUrls = selectSecondaryPagesToFetch(domain);
 
-    // Step 5: Separate unsupported markets
+      for (const secondaryUrl of secondaryUrls) {
+        if (secondaryPagesUsed.length >= 3) break;
+
+        // Fetch secondary page via Step 2 safe transport
+        const secondaryResult = await safeFetchDomain(secondaryUrl);
+
+        if (secondaryResult.ok) {
+          const secondaryDom = new JSDOM(secondaryResult.body, {
+            url: secondaryUrl,
+            pretendToBeVisual: true,
+          });
+
+          // Extract market signals from secondary page
+          const secondaryMarkets = extractMarketCandidates(secondaryDom, secondaryUrl);
+
+          // Merge with existing markets
+          for (const newMarket of secondaryMarkets) {
+            const existing = marketCandidates.find((m) => m.market_code === newMarket.market_code);
+            if (existing) {
+              // Merge signals and source URLs
+              existing.signals.push(...newMarket.signals);
+              for (const url of newMarket.source_urls) {
+                if (!existing.source_urls.includes(url)) {
+                  existing.source_urls.push(url);
+                }
+              }
+            } else {
+              // Add new market
+              marketCandidates.push(newMarket);
+            }
+          }
+
+          secondaryPagesUsed.push(secondaryUrl);
+        }
+      }
+    }
+
+    // STEP 5: Separate unsupported markets
     const unsupportedMarkets: UnsupportedMarketEvidence[] = [];
     const detectedMarkets = marketCandidates.filter((m) => {
       if (!SUPPORTED_MARKETS[m.market_code]) {
@@ -855,7 +991,7 @@ export async function extractBrandAndMarkets(
       extraction_metadata: {
         homepage_url: domain,
         final_resolved_url: finalUrl,
-        secondary_pages_used: [],
+        secondary_pages_used: secondaryPagesUsed,
         extraction_timestamp: new Date().toISOString(),
       },
     };

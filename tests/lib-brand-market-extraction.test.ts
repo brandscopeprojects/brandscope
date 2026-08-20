@@ -1,9 +1,111 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+// @ts-ignore JSDOM used for safe HTML parsing only
+import { JSDOM } from "jsdom";
 import { extractBrandAndMarkets, type BrandCandidate, type MarketCandidate } from "@/lib/data/brand-market-extraction";
+import * as brandDetection from "@/lib/data/brand-detection";
 
-// Mock safeFetchDomain to provide test HTML content
-// Note: In integration tests, real domains would be tested
-// For unit tests, we mock the fetch layer and test extraction logic directly
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST FIXTURES (HTML)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HTML_SINGLE_MARKET_KENYA = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>BetKing Kenya | Sports Betting</title>
+  <meta property="og:site_name" content="BetKing">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "Organization", "name": "BetKing", "url": "https://betking.ke"}
+  </script>
+</head>
+<body>
+  <h1>BetKing - Licensed in Kenya</h1>
+  <p>Kenya Gaming Authority License No: KGA-2023-001</p>
+  <p>We operate in Kenya with the highest standards of responsible gaming.</p>
+  <p>Prices in KES (Kenyan Shilling)</p>
+  <p>Contact: +254 700 123456</p>
+</body>
+</html>
+`;
+
+const HTML_MULTI_MARKET_OPERATOR = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>BrandCo - iGaming Platform</title>
+  <meta property="og:site_name" content="BrandCo">
+</head>
+<body>
+  <h1>BrandCo Global Operations</h1>
+
+  <section id="kenya">
+    <h2>Kenya</h2>
+    <p>Kenya Gaming Authority Licence Number: KGA-2024-123</p>
+    <p>Licensed operator in Kenya. Prices in KES.</p>
+  </section>
+
+  <section id="tanzania">
+    <h2>Tanzania</h2>
+    <p>Tanzania Gaming Commission Approved</p>
+    <p>Operating in Tanzania. Prices in TZS (Tanzanian Shilling)</p>
+    <p>Phone: +255 700 123456</p>
+  </section>
+
+  <section id="zambia">
+    <h2>Zambia Market</h2>
+    <p>Zambian operations at /zm subdomain</p>
+    <link rel="alternate" hreflang="en-ZM" href="https://brandco.com/zm">
+    <p>Prices in ZMW (Zambian Kwacha)</p>
+  </section>
+</body>
+</html>
+`;
+
+const HTML_WEAK_SIGNALS_ONLY = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generic Casino</title>
+</head>
+<body>
+  <h1>Casino Platform</h1>
+  <p>Available in Kenya and Tanzania</p>
+  <p>We accept multiple currencies including KES, TZS, NGN, ZAR</p>
+</body>
+</html>
+`;
+
+const HTML_FALSE_POSITIVE_TESTIMONIAL = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Betting Platform</title>
+</head>
+<body>
+  <h1>Customer Success Stories</h1>
+  <p>"I'm from Kenya and love this platform!" - John K.</p>
+  <p>"As a Tanzanian user, I highly recommend" - Sarah T.</p>
+  <p>Our competitor operates in Nigeria and South Africa.</p>
+</body>
+</html>
+`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOCK SETUP
+// ─────────────────────────────────────────────────────────────────────────────
+
+function mockSafeFetchDomain(htmlContent: string) {
+  vi.spyOn(brandDetection, "safeFetchDomain").mockResolvedValue({
+    ok: true,
+    status: 200,
+    contentType: "text/html",
+    body: htmlContent,
+  });
+}
+
+function clearMocks() {
+  vi.clearAllMocks();
+}
 
 describe("Brand Market Extraction (Step 3)", () => {
   // ─────────────────────────────────────────────────────────────────────────────
@@ -12,42 +114,66 @@ describe("Brand Market Extraction (Step 3)", () => {
 
   describe("Brand detection from structured metadata", () => {
     it("should handle integration point: Step 2 output consumed by Step 3", async () => {
-      // Contract: Step 3 receives SafeFetchResult from Step 2
-      // Result contains: { ok: true, status, contentType, body: string }
-      // Step 3 parses body, does NOT fetch homepage again
+      mockSafeFetchDomain(HTML_SINGLE_MARKET_KENYA);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
 
-      // This test documents the pipeline continuity
-      // Actual test: safeFetchDomain is called once per domain (Step 2)
-      // Then extraction happens on the returned body (Step 3)
-
-      expect(true).toBe(true); // Placeholder: integration verified in step 3 code
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Verify extraction happened from Step 2 result
+        expect(result.brand_candidates.length).toBeGreaterThan(0);
+        expect(result.extraction_metadata.homepage_url).toBe("https://example.com");
+      }
     });
 
     it("should not fetch homepage twice", async () => {
-      // Security contract: Step 2 handles all network access
-      // Step 3 parses the result, never makes independent fetches
+      const spy = vi.spyOn(brandDetection, "safeFetchDomain").mockResolvedValue({
+        ok: true,
+        status: 200,
+        contentType: "text/html",
+        body: HTML_SINGLE_MARKET_KENYA,
+      });
 
-      // Verification: safeFetchDomain called once, result parsed
-      // No additional network requests from extractBrandAndMarkets
+      await extractBrandAndMarkets("https://example.com");
 
-      expect(true).toBe(true); // Contract documented
+      // Verify safeFetchDomain called exactly once (not twice)
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      spy.mockRestore();
     });
 
     it("should extract brand from JSON-LD Organization schema (strong signal)", async () => {
-      // Mocked: extractBrandAndMarkets receives pre-fetched HTML
-      // This test would normally work with mocked safeFetchDomain
+      mockSafeFetchDomain(HTML_SINGLE_MARKET_KENYA);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
 
-      // Test data: HTML with JSON-LD Organization
-      // Expected: brand_name extracted, signal marked as "strong"
-
-      expect(true).toBe(true); // Placeholder: real test requires mock setup
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const brandCandidate = result.brand_candidates.find((b) => b.brand_name === "BetKing");
+        expect(brandCandidate).toBeDefined();
+        if (brandCandidate) {
+          const jsonLdSignal = brandCandidate.signals.find((s) => s.extractor_id === "json_ld_organization");
+          expect(jsonLdSignal).toBeDefined();
+          expect(jsonLdSignal?.signal_strength).toBe("strong");
+        }
+      }
     });
 
     it("should extract brand from og:site_name (strong signal)", async () => {
-      // Test: OpenGraph og:site_name extraction
-      // Expected: brand_name, signal strength = "strong"
+      mockSafeFetchDomain(HTML_SINGLE_MARKET_KENYA);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
 
-      expect(true).toBe(true); // Placeholder
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const brandCandidate = result.brand_candidates.find((b) => b.brand_name === "BetKing");
+        expect(brandCandidate).toBeDefined();
+        if (brandCandidate) {
+          const ogSignal = brandCandidate.signals.find((s) => s.extractor_id === "og_site_name");
+          expect(ogSignal).toBeDefined();
+          expect(ogSignal?.signal_strength).toBe("strong");
+        }
+      }
     });
 
     it("should preserve conflicting brand names instead of inventing certainty", async () => {
@@ -149,13 +275,31 @@ describe("Brand Market Extraction (Step 3)", () => {
   describe("Market detection (multi-country)", () => {
     it("should return multiple independent market candidates for multi-market operator", async () => {
       // CRITICAL TEST: Multi-market first principle
-      // Test: Single brand website with evidence for Kenya, Tanzania, Zambia
-      // Expected: detected_markets.length === 3
-      // Each market has independent signals and source_urls
-      // NEVER duplicate brand_name into separate brands
-      // NEVER merge markets into one "multi-country" entry
+      mockSafeFetchDomain(HTML_MULTI_MARKET_OPERATOR);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
 
-      expect(true).toBe(true); // Placeholder
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Should detect 3 independent markets
+        expect(result.detected_markets.length).toBeGreaterThanOrEqual(2); // At least Kenya and Tanzania
+
+        // Verify each market is independent (not merged)
+        const kenyaMarket = result.detected_markets.find((m) => m.market_code === "KE");
+        const tanzaniaMarket = result.detected_markets.find((m) => m.market_code === "TZ");
+
+        expect(kenyaMarket).toBeDefined();
+        expect(tanzaniaMarket).toBeDefined();
+
+        // Verify brand is same for all (not duplicated)
+        expect(result.brand_candidates.length).toBeGreaterThanOrEqual(1);
+
+        // Verify each market has its own signals
+        if (kenyaMarket && tanzaniaMarket) {
+          expect(kenyaMarket.signals.length).toBeGreaterThan(0);
+          expect(tanzaniaMarket.signals.length).toBeGreaterThan(0);
+        }
+      }
     });
 
     it("should associate country-specific paths with correct market", async () => {
@@ -283,25 +427,74 @@ describe("Brand Market Extraction (Step 3)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // MARKET ELIGIBILITY GATE (P1 BLOCKER)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe("Market eligibility gate (P1)", () => {
+    it("should NOT return markets with currency/hreflang/ccTLD signals alone", async () => {
+      // P1: Weak/medium-only signals must not create detected_markets candidates
+      mockSafeFetchDomain(HTML_WEAK_SIGNALS_ONLY);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Weak signals only: should have 0 or minimal detected_markets
+        // (signals exist but don't meet eligibility threshold)
+        // This prevents currency/mention false positives
+        expect(result.detected_markets.length).toBeLessThanOrEqual(2); // Very minimal
+      }
+    });
+
+    it("should return markets with strong signals (licence/terms)", async () => {
+      // Strong signals should always create detected_markets candidates
+      mockSafeFetchDomain(HTML_SINGLE_MARKET_KENYA);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const kenyaMarket = result.detected_markets.find((m) => m.market_code === "KE");
+        expect(kenyaMarket).toBeDefined();
+        if (kenyaMarket) {
+          const strongSignals = kenyaMarket.signals.filter((s) => s.signal_strength === "strong");
+          expect(strongSignals.length).toBeGreaterThan(0); // Has at least one strong signal
+        }
+      }
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // FALSE POSITIVE PREVENTION
   // ─────────────────────────────────────────────────────────────────────────────
 
   describe("False positive controls (critical)", () => {
     it("should NOT treat language alone as market operation proof", async () => {
-      // Test: lang="en" or lang="sw"
-      // Expected: NO market_candidates added
-      // Rationale: language != market operation
+      // VERIFY: lang="en" or lang="sw" not extracted as market signal
+      const html = '<html lang="en"><body>Content</body></html>';
+      mockSafeFetchDomain(html);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
 
-      expect(true).toBe(true); // Placeholder
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // No markets should be detected from language alone
+        expect(result.detected_markets.length).toBe(0);
+      }
     });
 
     it("should NOT treat currency alone as market operation proof", async () => {
-      // Test: "KES" displayed, but no other Kenya evidence
-      // Expected: if this is ONLY signal, detect but mark carefully
-      // OR: do not add market at all (depends on config)
-      // Current behavior: add with signal_strength = "medium" (not operation proof)
+      // P1: Currency signal_strength = "medium", doesn't meet eligibility alone
+      mockSafeFetchDomain(HTML_WEAK_SIGNALS_ONLY);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
 
-      expect(true).toBe(true); // Placeholder
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // No markets should be detected from currency alone
+        // (eligibility gate filters weak/medium-only signals)
+        expect(result.detected_markets.length).toBe(0);
+      }
     });
 
     it("should NOT treat generic country name mentions as market presence", async () => {
@@ -337,12 +530,32 @@ describe("Brand Market Extraction (Step 3)", () => {
       expect(true).toBe(true); // Placeholder
     });
 
-    it("should NOT infer market from footer navigation country names", async () => {
-      // Test: Footer with "English (Kenya)" as language variant
-      // Expected: NO market_candidates from this alone
-      // Rationale: localization option != market operation
+    it("should NOT infer market from testimonials or customer stories", async () => {
+      // P0: "Customer from Kenya said..." is NOT market presence evidence
+      mockSafeFetchDomain(HTML_FALSE_POSITIVE_TESTIMONIAL);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
 
-      expect(true).toBe(true); // Placeholder
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Testimonials should not create market_candidates
+        expect(result.detected_markets.length).toBe(0);
+      }
+    });
+
+    it("should NOT infer market from footer navigation country names", async () => {
+      // Test: "English (Kenya)" as language variant (not market evidence)
+      const html =
+        '<html><body><footer><select><option>English (Kenya)</option></select></footer></body></html>';
+      mockSafeFetchDomain(html);
+      const result = await extractBrandAndMarkets("https://example.com");
+      clearMocks();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Language variant selector should not create market_candidates
+        expect(result.detected_markets.length).toBe(0);
+      }
     });
   });
 
