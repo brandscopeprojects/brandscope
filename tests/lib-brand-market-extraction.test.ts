@@ -738,7 +738,7 @@ describe("Brand Market Extraction (Step 3)", () => {
         body: htmlWithLinks,
       });
       // Mock secondary pages (won't be called in this test setup, but document intent)
-      spy.mockResolvedValue({ ok: false, error: "not_called" });
+      spy.mockResolvedValue({ ok: false, error: "fetch_failed" });
 
       const result = await extractBrandAndMarkets("https://example.com");
 
@@ -822,6 +822,161 @@ describe("Brand Market Extraction (Step 3)", () => {
       if (result.ok) {
         expect(result.extraction_metadata.secondary_pages_used.length).toBeLessThanOrEqual(3);
       }
+    });
+  });
+
+  describe("Multi-market secondary discovery", () => {
+    it("MANDATORY: should fetch secondary pages for Tanzania/Zambia when Kenya detected on homepage", async () => {
+      // GATE: This test MUST pass before real-world validation.
+      //
+      // Scenario: Multi-market operator with Kenya strongly proven on homepage,
+      // but Tanzania and Zambia only discoverable through secondary pages.
+      //
+      // Expected: Secondary pages fetched and merged, all 3 markets returned independently.
+
+      const htmlHomepageKenyaWithLinks = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>GlobalBet - iGaming</title>
+          <meta property="og:site_name" content="GlobalBet">
+          <link rel="alternate" hreflang="en-TZ" href="https://example.com/tz">
+          <link rel="alternate" hreflang="en-ZM" href="https://example.com/zm">
+        </head>
+        <body>
+          <h1>GlobalBet - Licensed in Kenya</h1>
+          <p>Kenya Gaming Board License: KGB-2024-789</p>
+          <p>Terms and Conditions for Kenya operations</p>
+          <p>Prices in KES (Kenyan Shilling)</p>
+          <p>Country phone: +254 700 123456</p>
+
+          <nav>
+            <a href="/tz">Tanzania</a>
+            <a href="/zm">Zambia</a>
+            <a href="/legal">Legal</a>
+          </nav>
+        </body>
+        </html>
+      `;
+
+      const htmlSecondaryTanzania = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>GlobalBet Tanzania - Gaming</title>
+        </head>
+        <body>
+          <h1>GlobalBet Tanzania</h1>
+          <p>Tanzania Gaming Commission Approval: TGC-2024-456</p>
+          <p>Operating in Tanzania with full compliance</p>
+          <p>Prices in TZS (Tanzanian Shilling)</p>
+          <p>Country phone: +255 700 654321</p>
+        </body>
+        </html>
+      `;
+
+      const htmlSecondaryZambia = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>GlobalBet Zambia - Gaming</title>
+        </head>
+        <body>
+          <h1>GlobalBet Zambia</h1>
+          <p>Licensed by Zambia Gaming Commission. License No: ZGC-2024-321</p>
+          <p>Operating in Zambia with regulatory compliance</p>
+          <p>Prices in ZMW (Zambian Kwacha)</p>
+          <p>Country phone: +260 700 987654</p>
+        </body>
+        </html>
+      `;
+
+      const spy = vi.spyOn(brandDetection, "safeFetchDomain");
+
+      // Mock: homepage + secondary pages
+      spy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        contentType: "text/html",
+        body: htmlHomepageKenyaWithLinks,
+      });
+
+      // Mock secondary /tz page
+      spy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        contentType: "text/html",
+        body: htmlSecondaryTanzania,
+      });
+
+      // Mock secondary /zm page
+      spy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        contentType: "text/html",
+        body: htmlSecondaryZambia,
+      });
+
+      const result = await extractBrandAndMarkets("https://example.com/");
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // ASSERTIONS (mandatory gate criteria)
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+
+      // 1. One shared brand
+      expect(result.brand_candidates.length).toBe(1);
+      expect(result.brand_candidates[0].brand_name).toBe("GlobalBet");
+
+      // 2. Three detected markets (KE, TZ, ZM as independent candidates)
+      expect(result.detected_markets.length).toBe(3);
+      const marketCodes = result.detected_markets.map((m) => m.market_code).sort();
+      expect(marketCodes).toEqual(["KE", "TZ", "ZM"]);
+
+      // 3. Each market has correct lifecycle_state
+      result.detected_markets.forEach((market) => {
+        expect(market.lifecycle_state).toBe("detected");
+      });
+
+      // 4. Kenya evidence sourced from homepage
+      const keMarket = result.detected_markets.find((m) => m.market_code === "KE");
+      expect(keMarket).toBeDefined();
+      expect(keMarket!.source_urls).toContain("https://example.com/");
+      expect(keMarket!.signals.some((s) => s.signal_type === "gaming_licence")).toBe(true);
+      expect(keMarket!.signals.some((s) => s.detected_value === "KES" || s.detected_value === "KE")).toBe(
+        true,
+      );
+
+      // 5. Tanzania evidence sourced from /tz page
+      const tzMarket = result.detected_markets.find((m) => m.market_code === "TZ");
+      expect(tzMarket).toBeDefined();
+      expect(tzMarket!.source_urls).toContain("https://example.com/tz");
+      expect(tzMarket!.signals.some((s) => s.signal_type === "gaming_licence")).toBe(true);
+      expect(tzMarket!.signals.some((s) => s.detected_value === "TZS" || s.detected_value === "TZ")).toBe(
+        true,
+      );
+
+      // 6. Zambia evidence sourced from /zm page
+      const zmMarket = result.detected_markets.find((m) => m.market_code === "ZM");
+      expect(zmMarket).toBeDefined();
+      expect(zmMarket!.source_urls).toContain("https://example.com/zm");
+      expect(zmMarket!.signals.some((s) => s.signal_type === "gaming_licence")).toBe(true);
+      expect(zmMarket!.signals.some((s) => s.detected_value === "ZMW" || s.detected_value === "ZM")).toBe(
+        true,
+      );
+
+      // 7. Homepage fetched exactly once (not refetched)
+      expect(spy.mock.calls[0][0]).toBe("https://example.com/");
+      // Subsequent calls should be secondary pages
+      expect(spy.mock.calls[1][0]).toBe("https://example.com/tz");
+      expect(spy.mock.calls[2][0]).toBe("https://example.com/zm");
+
+      // 8. All safeFetchDomain calls succeeded (1 homepage + up to 3 secondary)
+      expect(spy.mock.calls.length).toBeLessThanOrEqual(4); // 1 homepage + max 3 secondary
+      spy.mockRestore();
     });
   });
 

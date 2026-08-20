@@ -839,11 +839,137 @@ function addMarketSignal(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Determine if homepage evidence is sufficient.
- * Returns true if at least one market is detected with sufficient evidence.
+ * Detect potential market indicators on the homepage (unresolved).
+ * Returns a set of market codes that have indicators (country selectors, paths, hreflang, etc.)
+ * even if they haven't been validated with strong/medium signals yet.
  */
-function isHomepageEvidenceSufficient(markets: MarketCandidate[]): boolean {
-  return markets.length > 0;
+function detectPotentialMarketIndicators(dom: JSDOM, baseUrl: string): Set<string> {
+  const potentialMarkets = new Set<string>();
+
+  // 1. Check country selector dropdowns
+  const selects = dom.window.document.querySelectorAll("select");
+  for (const select of selects) {
+    const selectName = select.name?.toLowerCase() || "";
+    const selectId = select.id?.toLowerCase() || "";
+
+    if (
+      selectName.includes("country") ||
+      selectName.includes("market") ||
+      selectName.includes("region") ||
+      selectId.includes("country") ||
+      selectId.includes("market") ||
+      selectId.includes("region")
+    ) {
+      const options = select.querySelectorAll("option");
+      for (const option of options) {
+        const text = option.textContent?.trim() || "";
+        const value = option.value?.trim() || "";
+
+        for (const code of Object.keys(SUPPORTED_MARKETS)) {
+          if (
+            text.toLowerCase().includes(code.toLowerCase()) ||
+            text.toLowerCase().includes(SUPPORTED_MARKETS[code as keyof typeof SUPPORTED_MARKETS].toLowerCase()) ||
+            value.toLowerCase().includes(code.toLowerCase())
+          ) {
+            potentialMarkets.add(code);
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Check for country-specific paths/subdomains in links (including domain-relative paths)
+  const links = dom.window.document.querySelectorAll("a[href]");
+  for (const link of links) {
+    const href = link.getAttribute("href") || "";
+    const pathname = getPath(href);
+    const hostname = getHostname(href);
+    const baseHostname = getHostname(baseUrl);
+
+    // Same-origin check for domain-relative paths
+    const isSameOrigin =
+      !hostname ||
+      hostname === baseHostname ||
+      hostname === baseHostname?.replace(/^www\./, "");
+
+    if (isSameOrigin) {
+      for (const code of Object.keys(SUPPORTED_MARKETS)) {
+        // Check for /ke, /tz, /zm, /ng, /za paths
+        if (
+          pathname.toLowerCase().includes(`/${code.toLowerCase()}`) ||
+          pathname.toLowerCase().includes(`/${code.toLowerCase()}/`)
+        ) {
+          potentialMarkets.add(code);
+        }
+        // Check for subdomains like ke.domain.com, tz.domain.com
+        if (hostname && hostname.toLowerCase().startsWith(`${code.toLowerCase()}.`)) {
+          potentialMarkets.add(code);
+        }
+      }
+    }
+  }
+
+  // 3. Check hreflang links
+  const hreflangs = dom.window.document.querySelectorAll("link[rel='alternate'][hreflang]");
+  for (const hreflang of hreflangs) {
+    const lang = hreflang.getAttribute("hreflang") || "";
+    // Match language codes like "en-KE", "sw-TZ", "en-ZM" etc.
+    for (const code of Object.keys(SUPPORTED_MARKETS)) {
+      if (lang.toLowerCase().includes(code.toLowerCase())) {
+        potentialMarkets.add(code);
+      }
+    }
+  }
+
+  // 4. Check for explicit multi-country operating statements
+  const bodyText = dom.window.document.body.textContent || "";
+  for (const code of Object.keys(SUPPORTED_MARKETS)) {
+    const countryName = SUPPORTED_MARKETS[code as keyof typeof SUPPORTED_MARKETS];
+    // Pattern: "we operate in [Country]", "available in [Country]", "our [Country] platform"
+    const patterns = [
+      new RegExp(`\\b(we\\s+)?operate\\s+in\\s+${countryName}\\b`, "i"),
+      new RegExp(`\\b(available|operating)\\s+in\\s+${countryName}\\b`, "i"),
+      new RegExp(`our\\s+${countryName}\\s+(platform|site|service)\\b`, "i"),
+    ];
+    if (patterns.some((p) => p.test(bodyText))) {
+      potentialMarkets.add(code);
+    }
+  }
+
+  return potentialMarkets;
+}
+
+/**
+ * Determine if homepage evidence is sufficient.
+ *
+ * For single-market sites: true if any market detected
+ * For multi-market sites: true only if all potential market indicators have been addressed
+ *   (i.e., detected_markets.length >= potential_markets.length)
+ *
+ * Returns false if there are unresolved multi-market indicators suggesting additional
+ * markets need exploration via secondary pages.
+ */
+function isHomepageEvidenceSufficient(
+  markets: MarketCandidate[],
+  dom: JSDOM,
+  baseUrl: string,
+): boolean {
+  // Single-market operator: one detected market is sufficient
+  if (markets.length > 1) {
+    return true; // Multiple markets already found, homepage is definitely sufficient
+  }
+
+  // Check for unresolved multi-market indicators
+  const potentialMarkets = detectPotentialMarketIndicators(dom, baseUrl);
+
+  // If there are unresolved market indicators beyond what's detected, need secondary pages
+  // i.e., if homepage mentions TZ and ZM but only KE is detected, we need to fetch TZ/ZM pages
+  if (potentialMarkets.size > markets.length) {
+    return false;
+  }
+
+  // All potential markets have been addressed (or only one market exists)
+  return markets.length > 0 || potentialMarkets.size === 0;
 }
 
 /**
@@ -903,9 +1029,21 @@ function selectSecondaryPagesToFetch(dom: JSDOM, baseUrl: string): string[] {
     const ariaLabel = (anchor.getAttribute("aria-label") || "").toLowerCase();
     const combinedText = `${linkText} ${hrefLower} ${ariaLabel}`;
 
+    // Highest priority: country-specific paths for supported markets (e.g., /ke, /tz, /zm)
+    for (const code of Object.keys(SUPPORTED_MARKETS)) {
+      if (
+        hrefLower.includes(`/${code.toLowerCase()}`) ||
+        hrefLower.includes(`/${code.toLowerCase()}/`)
+      ) {
+        score += 50; // Very high priority for country-specific paths
+        break; // Only count once per link
+      }
+    }
+
+    // Secondary priority: legal/terms/compliance keywords
     for (const keyword of relevantKeywords) {
       if (combinedText.includes(keyword)) {
-        score += 10; // Strong match in text/label/href
+        score += 10; // Match in text/label/href
       }
     }
 
@@ -1004,7 +1142,7 @@ export async function extractBrandAndMarkets(
     const secondaryPagesUsed: string[] = [];
 
     // STEP 4: Check if homepage evidence is sufficient
-    if (!isHomepageEvidenceSufficient(marketCandidates)) {
+    if (!isHomepageEvidenceSufficient(marketCandidates, dom, finalUrl)) {
       // Discover secondary pages from homepage links or fallback to conventional paths
       const secondaryUrls = selectSecondaryPagesToFetch(dom, domain);
 
