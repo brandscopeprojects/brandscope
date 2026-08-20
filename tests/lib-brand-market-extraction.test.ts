@@ -978,6 +978,102 @@ describe("Brand Market Extraction (Step 3)", () => {
       expect(spy.mock.calls.length).toBeLessThanOrEqual(4); // 1 homepage + max 3 secondary
       spy.mockRestore();
     });
+
+    it("GATE: Set membership — must fetch secondary when unresolved market detected", async () => {
+      // GATE: This test MUST pass before real-world validation.
+      //
+      // Critical bug fix: isHomepageEvidenceSufficient() must use SET MEMBERSHIP, not counts.
+      //
+      // Scenario: Potential markets = {TZ, ZM}, Detected = {KE, TZ}
+      // Unresolved: ZM (potential but not detected)
+      // Expected: Homepage is NOT sufficient; secondary pages MUST be fetched for ZM
+      //
+      // False positive example that the old code would accept:
+      // Old: (2 detected >= 2 potential) → true (WRONG)
+      // New: (ZM not in {KE, TZ}) → false (CORRECT)
+
+      const htmlWithMultiplePotentialMarkets = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>GlobalBet - Multi-Market</title>
+          <meta property="og:site_name" content="GlobalBet">
+          <link rel="alternate" hreflang="en-TZ" href="https://example.com/tz">
+          <link rel="alternate" hreflang="en-ZM" href="https://example.com/zm">
+        </head>
+        <body>
+          <h1>GlobalBet</h1>
+          <p>Kenya Gaming Board License: KGB-001</p>
+          <p>Tanzania Gaming Commission: TGC-002</p>
+          <nav>
+            <a href="/tz">Tanzania</a>
+            <a href="/zm">Zambia</a>
+            <a href="/ke">Kenya</a>
+          </nav>
+        </body>
+        </html>
+      `;
+
+      const htmlZambiaPage = `
+        <!DOCTYPE html>
+        <html>
+        <body>
+          <p>Zambia Gaming Commission License: ZGC-003</p>
+          <p>Prices in ZMW</p>
+        </body>
+        </html>
+      `;
+
+      const spy = vi.spyOn(brandDetection, "safeFetchDomain");
+
+      // Mock: homepage + secondary pages
+      spy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        contentType: "text/html",
+        body: htmlWithMultiplePotentialMarkets,
+      });
+
+      // Mock TZ secondary page (may or may not be fetched depending on scoring)
+      spy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        contentType: "text/html",
+        body: `<!DOCTYPE html><html><body>Tanzania page (no market signals)</body></html>`,
+      });
+
+      // Mock ZM secondary page
+      spy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        contentType: "text/html",
+        body: htmlZambiaPage,
+      });
+
+      const result = await extractBrandAndMarkets("https://example.com/");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // Scenario: Homepage has KE + TZ, but potential is TZ + ZM
+      // Expected: ZM should be detected from secondary page (/zm)
+      const marketCodes = result.detected_markets.map((m) => m.market_code).sort();
+
+      // All three markets should be detected (KE from potential, TZ from both, ZM from secondary)
+      expect(marketCodes).toContain("KE");
+      expect(marketCodes).toContain("TZ");
+      expect(marketCodes).toContain("ZM");
+
+      // ZM should have come from the /zm secondary page
+      const zmMarket = result.detected_markets.find((m) => m.market_code === "ZM");
+      expect(zmMarket).toBeDefined();
+      expect(zmMarket!.source_urls).toContain("https://example.com/zm");
+
+      // Proof that secondary pages were fetched (not skipped due to count confusion)
+      expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2); // At least homepage + /zm
+
+      spy.mockRestore();
+    });
   });
 
   describe("Architecture compliance", () => {

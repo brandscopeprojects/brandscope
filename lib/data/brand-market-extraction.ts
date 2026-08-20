@@ -942,9 +942,9 @@ function detectPotentialMarketIndicators(dom: JSDOM, baseUrl: string): Set<strin
 /**
  * Determine if homepage evidence is sufficient.
  *
- * For single-market sites: true if any market detected
- * For multi-market sites: true only if all potential market indicators have been addressed
- *   (i.e., detected_markets.length >= potential_markets.length)
+ * Uses SET MEMBERSHIP, not just counts:
+ * - For each potential market indicator found on homepage, verify it's already in detected_markets
+ * - If ANY potential market is unresolved, secondary pages are needed
  *
  * Returns false if there are unresolved multi-market indicators suggesting additional
  * markets need exploration via secondary pages.
@@ -954,22 +954,30 @@ function isHomepageEvidenceSufficient(
   dom: JSDOM,
   baseUrl: string,
 ): boolean {
-  // Single-market operator: one detected market is sufficient
-  if (markets.length > 1) {
-    return true; // Multiple markets already found, homepage is definitely sufficient
-  }
-
   // Check for unresolved multi-market indicators
   const potentialMarkets = detectPotentialMarketIndicators(dom, baseUrl);
 
-  // If there are unresolved market indicators beyond what's detected, need secondary pages
-  // i.e., if homepage mentions TZ and ZM but only KE is detected, we need to fetch TZ/ZM pages
-  if (potentialMarkets.size > markets.length) {
-    return false;
+  // If no potential markets detected, homepage is sufficient (single-market or generic site)
+  if (potentialMarkets.size === 0) {
+    return markets.length > 0;
   }
 
-  // All potential markets have been addressed (or only one market exists)
-  return markets.length > 0 || potentialMarkets.size === 0;
+  // Build set of detected market codes for membership check
+  const detectedCodes = new Set(markets.map((m) => m.market_code));
+
+  // CRITICAL: Every potential market must be in the detected set
+  // If even ONE potential market is unresolved, we need secondary pages
+  const potentialArray = Array.from(potentialMarkets);
+  for (let i = 0; i < potentialArray.length; i++) {
+    const potentialCode = potentialArray[i];
+    if (!detectedCodes.has(potentialCode)) {
+      // Unresolved market indicator found
+      return false;
+    }
+  }
+
+  // All potential markets have been detected and validated
+  return true;
 }
 
 /**
