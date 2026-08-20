@@ -648,6 +648,194 @@ export type Database = {
           },
         ]
       }
+      brand_competitive_position: {
+        Row: {
+          active_override_id: string | null
+          brand_id: string
+          competitive_overlap: number | null
+          competitive_position_confidence: number
+          competitive_threat: number | null
+          competitor_id: string
+          effective_overlap_weights: Json | null
+          effective_threat_weights: Json | null
+          id: string
+          latest_brand_snapshot_id: string | null
+          latest_operator_snapshot_id: string
+          market_code: string
+          overlap_component_scores: Json | null
+          relative_strength_ratio: number | null
+          relative_strength_score: number | null
+          tier: string
+          updated_at: string
+        }
+        Insert: {
+          active_override_id?: string | null
+          brand_id: string
+          competitive_overlap?: number | null
+          competitive_position_confidence: number
+          competitive_threat?: number | null
+          competitor_id: string
+          effective_overlap_weights?: Json | null
+          effective_threat_weights?: Json | null
+          id?: string
+          latest_brand_snapshot_id?: string | null
+          latest_operator_snapshot_id: string
+          market_code: string
+          overlap_component_scores?: Json | null
+          relative_strength_ratio?: number | null
+          relative_strength_score?: number | null
+          tier?: string
+          updated_at?: string
+        }
+        Update: {
+          active_override_id?: string | null
+          brand_id?: string
+          competitive_overlap?: number | null
+          competitive_position_confidence?: number
+          competitive_threat?: number | null
+          competitor_id?: string
+          effective_overlap_weights?: Json | null
+          effective_threat_weights?: Json | null
+          id?: string
+          latest_brand_snapshot_id?: string | null
+          latest_operator_snapshot_id?: string
+          market_code?: string
+          overlap_component_scores?: Json | null
+          relative_strength_ratio?: number | null
+          relative_strength_score?: number | null
+          tier?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_competitive_position_active_override_fkey"
+            columns: ["active_override_id"]
+            isOneToOne: false
+            referencedRelation: "market_power_override_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_competitive_position_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_competitive_position_competitor_id_fkey"
+            columns: ["competitor_id"]
+            isOneToOne: false
+            referencedRelation: "competitors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_competitive_position_latest_brand_snapshot_fkey"
+            columns: ["latest_brand_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "brand_competitive_snapshot"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_competitive_position_latest_operator_snapshot_id_fkey"
+            columns: ["latest_operator_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "market_power_operator_snapshot"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      brand_competitive_snapshot: {
+        Row: {
+          brand_id: string
+          calculation_timestamp: string
+          competitive_overlap: number | null
+          competitive_position_confidence: number
+          competitive_threat: number | null
+          competitor_id: string
+          config_id: string
+          created_at: string
+          effective_overlap_weights: Json | null
+          effective_threat_weights: Json | null
+          engine_version: string
+          id: string
+          market_code: string
+          operator_snapshot_id: string
+          overlap_component_scores: Json | null
+          relative_strength_ratio: number | null
+          relative_strength_score: number | null
+          tier: string
+        }
+        Insert: {
+          brand_id: string
+          calculation_timestamp?: string
+          competitive_overlap?: number | null
+          competitive_position_confidence: number
+          competitive_threat?: number | null
+          competitor_id: string
+          config_id: string
+          created_at?: string
+          effective_overlap_weights?: Json | null
+          effective_threat_weights?: Json | null
+          engine_version: string
+          id?: string
+          market_code: string
+          operator_snapshot_id: string
+          overlap_component_scores?: Json | null
+          relative_strength_ratio?: number | null
+          relative_strength_score?: number | null
+          tier: string
+        }
+        Update: {
+          brand_id?: string
+          calculation_timestamp?: string
+          competitive_overlap?: number | null
+          competitive_position_confidence?: number
+          competitive_threat?: number | null
+          competitor_id?: string
+          config_id?: string
+          created_at?: string
+          effective_overlap_weights?: Json | null
+          effective_threat_weights?: Json | null
+          engine_version?: string
+          id?: string
+          market_code?: string
+          operator_snapshot_id?: string
+          overlap_component_scores?: Json | null
+          relative_strength_ratio?: number | null
+          relative_strength_score?: number | null
+          tier?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_competitive_snapshot_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_competitive_snapshot_competitor_id_fkey"
+            columns: ["competitor_id"]
+            isOneToOne: false
+            referencedRelation: "competitors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_competitive_snapshot_config_fkey"
+            columns: ["config_id"]
+            isOneToOne: false
+            referencedRelation: "market_power_scoring_config"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_competitive_snapshot_operator_snapshot_id_fkey"
+            columns: ["operator_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "market_power_operator_snapshot"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brand_competitors: {
         Row: {
           added_at: string | null
@@ -711,6 +899,95 @@ export type Database = {
           {
             foreignKeyName: "brand_competitors_competitor_id_fkey"
             columns: ["competitor_id"]
+            isOneToOne: false
+            referencedRelation: "competitors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      brand_markets: {
+        Row: {
+          brand_id: string
+          confirmed_at: string | null
+          created_at: string
+          detection_status: string
+          first_detected_at: string | null
+          id: string
+          market_code: string
+          tracked_from: string | null
+          updated_at: string
+        }
+        Insert: {
+          brand_id: string
+          confirmed_at?: string | null
+          created_at?: string
+          detection_status?: string
+          first_detected_at?: string | null
+          id?: string
+          market_code: string
+          tracked_from?: string | null
+          updated_at?: string
+        }
+        Update: {
+          brand_id?: string
+          confirmed_at?: string | null
+          created_at?: string
+          detection_status?: string
+          first_detected_at?: string | null
+          id?: string
+          market_code?: string
+          tracked_from?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_markets_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      brand_operator_identity: {
+        Row: {
+          brand_id: string
+          canonical_competitor_id: string
+          created_at: string
+          id: string
+          verification_source: string | null
+          verification_status: string
+          verified_at: string | null
+        }
+        Insert: {
+          brand_id: string
+          canonical_competitor_id: string
+          created_at?: string
+          id?: string
+          verification_source?: string | null
+          verification_status?: string
+          verified_at?: string | null
+        }
+        Update: {
+          brand_id?: string
+          canonical_competitor_id?: string
+          created_at?: string
+          id?: string
+          verification_source?: string | null
+          verification_status?: string
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_operator_identity_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: true
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_operator_identity_canonical_competitor_id_fkey"
+            columns: ["canonical_competitor_id"]
             isOneToOne: false
             referencedRelation: "competitors"
             referencedColumns: ["id"]
@@ -1037,6 +1314,85 @@ export type Database = {
           },
         ]
       }
+      competitor_domain_markets: {
+        Row: {
+          created_at: string
+          domain_id: string
+          evidence_reference: string | null
+          id: string
+          market_code: string
+          verification_status: string
+        }
+        Insert: {
+          created_at?: string
+          domain_id: string
+          evidence_reference?: string | null
+          id?: string
+          market_code: string
+          verification_status?: string
+        }
+        Update: {
+          created_at?: string
+          domain_id?: string
+          evidence_reference?: string | null
+          id?: string
+          market_code?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_domain_markets_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "competitor_domains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      competitor_domains: {
+        Row: {
+          competitor_id: string
+          created_at: string
+          domain: string
+          evidence_source: string | null
+          first_seen_at: string
+          id: string
+          is_canonical: boolean
+          last_verified_at: string | null
+          verification_status: string
+        }
+        Insert: {
+          competitor_id: string
+          created_at?: string
+          domain: string
+          evidence_source?: string | null
+          first_seen_at?: string
+          id?: string
+          is_canonical?: boolean
+          last_verified_at?: string | null
+          verification_status?: string
+        }
+        Update: {
+          competitor_id?: string
+          created_at?: string
+          domain?: string
+          evidence_source?: string | null
+          first_seen_at?: string
+          id?: string
+          is_canonical?: boolean
+          last_verified_at?: string | null
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_domains_competitor_id_fkey"
+            columns: ["competitor_id"]
+            isOneToOne: false
+            referencedRelation: "competitors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       competitor_profiles: {
         Row: {
           active_ads_count: number | null
@@ -1200,6 +1556,7 @@ export type Database = {
           raw_data: Json | null
           scan_week: string
           sentiment_score: number | null
+          synthesis_summary: Json | null
           traffic_sources: Json | null
         }
         Insert: {
@@ -1215,6 +1572,7 @@ export type Database = {
           raw_data?: Json | null
           scan_week: string
           sentiment_score?: number | null
+          synthesis_summary?: Json | null
           traffic_sources?: Json | null
         }
         Update: {
@@ -1230,6 +1588,7 @@ export type Database = {
           raw_data?: Json | null
           scan_week?: string
           sentiment_score?: number | null
+          synthesis_summary?: Json | null
           traffic_sources?: Json | null
         }
         Relationships: [
@@ -1575,6 +1934,7 @@ export type Database = {
           raw_data: Json | null
           scan_week: string
           score_change_wow: number | null
+          synthesis_summary: Json | null
           top_ai_mentions: Json | null
         }
         Insert: {
@@ -1612,6 +1972,7 @@ export type Database = {
           raw_data?: Json | null
           scan_week: string
           score_change_wow?: number | null
+          synthesis_summary?: Json | null
           top_ai_mentions?: Json | null
         }
         Update: {
@@ -1649,6 +2010,7 @@ export type Database = {
           raw_data?: Json | null
           scan_week?: string
           score_change_wow?: number | null
+          synthesis_summary?: Json | null
           top_ai_mentions?: Json | null
         }
         Relationships: [
@@ -1709,6 +2071,7 @@ export type Database = {
           roles: Json | null
           scan_week: string
           signal_types: string[] | null
+          synthesis_summary: Json | null
         }
         Insert: {
           brand_id: string
@@ -1721,6 +2084,7 @@ export type Database = {
           roles?: Json | null
           scan_week: string
           signal_types?: string[] | null
+          synthesis_summary?: Json | null
         }
         Update: {
           brand_id?: string
@@ -1733,6 +2097,7 @@ export type Database = {
           roles?: Json | null
           scan_week?: string
           signal_types?: string[] | null
+          synthesis_summary?: Json | null
         }
         Relationships: [
           {
@@ -2041,6 +2406,398 @@ export type Database = {
         }
         Relationships: []
       }
+      market_power_methodology_content: {
+        Row: {
+          body: string
+          content_key: string
+          created_at: string
+          drawer_section: string | null
+          id: string
+          title: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          body: string
+          content_key: string
+          created_at?: string
+          drawer_section?: string | null
+          id?: string
+          title: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          body?: string
+          content_key?: string
+          created_at?: string
+          drawer_section?: string | null
+          id?: string
+          title?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_power_methodology_content_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_power_operator_snapshot: {
+        Row: {
+          calculation_timestamp: string
+          competitor_id: string
+          config_id: string
+          created_at: string
+          diagnostics: Json | null
+          dimension_scores: Json
+          effective_dimension_weights: Json
+          effective_metric_weights: Json
+          engine_version: string
+          id: string
+          is_provisional: boolean
+          market_code: string
+          market_standing: number
+          metric_scores: Json
+          momentum_pressure_score: number | null
+          momentum_trend: string
+          operator_market_standing_confidence: number
+          operator_market_universe_size: number
+        }
+        Insert: {
+          calculation_timestamp?: string
+          competitor_id: string
+          config_id: string
+          created_at?: string
+          diagnostics?: Json | null
+          dimension_scores: Json
+          effective_dimension_weights: Json
+          effective_metric_weights: Json
+          engine_version: string
+          id?: string
+          is_provisional?: boolean
+          market_code: string
+          market_standing: number
+          metric_scores: Json
+          momentum_pressure_score?: number | null
+          momentum_trend?: string
+          operator_market_standing_confidence: number
+          operator_market_universe_size: number
+        }
+        Update: {
+          calculation_timestamp?: string
+          competitor_id?: string
+          config_id?: string
+          created_at?: string
+          diagnostics?: Json | null
+          dimension_scores?: Json
+          effective_dimension_weights?: Json
+          effective_metric_weights?: Json
+          engine_version?: string
+          id?: string
+          is_provisional?: boolean
+          market_code?: string
+          market_standing?: number
+          metric_scores?: Json
+          momentum_pressure_score?: number | null
+          momentum_trend?: string
+          operator_market_standing_confidence?: number
+          operator_market_universe_size?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_power_operator_snapshot_competitor_id_fkey"
+            columns: ["competitor_id"]
+            isOneToOne: false
+            referencedRelation: "competitors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "market_power_operator_snapshot_config_fkey"
+            columns: ["config_id"]
+            isOneToOne: false
+            referencedRelation: "market_power_scoring_config"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_power_override_events: {
+        Row: {
+          actor_profile_id: string
+          brand_id: string
+          competitor_id: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          market_code: string
+          override_type: string
+          override_value: string
+          previous_calculated_value: string
+          reason: string
+          review_date: string | null
+        }
+        Insert: {
+          actor_profile_id: string
+          brand_id: string
+          competitor_id: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          market_code: string
+          override_type?: string
+          override_value: string
+          previous_calculated_value: string
+          reason: string
+          review_date?: string | null
+        }
+        Update: {
+          actor_profile_id?: string
+          brand_id?: string
+          competitor_id?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          market_code?: string
+          override_type?: string
+          override_value?: string
+          previous_calculated_value?: string
+          reason?: string
+          review_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_power_override_events_actor_profile_id_fkey"
+            columns: ["actor_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "market_power_override_events_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "market_power_override_events_competitor_id_fkey"
+            columns: ["competitor_id"]
+            isOneToOne: false
+            referencedRelation: "competitors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_power_scoring_config: {
+        Row: {
+          activated_at: string | null
+          config_name: string
+          created_at: string
+          created_by: string | null
+          id: string
+          magnitude_fallback_spread: number
+          metric_weights: Json
+          minimum_operators_for_universe: number
+          missing_dimension_coverage_threshold: number
+          momentum_downward_threshold: number
+          momentum_lookback_periods: number
+          momentum_pressure_strong_upward: number
+          momentum_pressure_upward: number
+          momentum_stability_stddev_threshold: number
+          momentum_strong_downward_threshold: number
+          momentum_strong_upward_threshold: number
+          momentum_upward_threshold: number
+          overlap_weight_channel: number
+          overlap_weight_keyword: number
+          overlap_weight_product: number
+          percentile_magnitude_alpha: number
+          position_confidence_weights: Json
+          relative_strength_center: number
+          relative_strength_clamp_max: number
+          relative_strength_clamp_min: number
+          relative_strength_scale: number
+          retired_at: string | null
+          standing_confidence_contradiction_penalty: number
+          standing_confidence_weights: Json
+          status: string
+          threat_weight_momentum: number
+          threat_weight_overlap: number
+          threat_weight_relative_strength: number
+          threshold_challenger_market_standing: number
+          threshold_challenger_momentum_pressure: number
+          threshold_challenger_overlap: number
+          threshold_dominant_market_standing: number
+          threshold_dominant_overlap: number
+          threshold_midmarket_market_standing: number
+          threshold_midmarket_overlap: number
+          updated_at: string
+          version: number
+          weight_acquisition_power: number
+          weight_commercial_presence: number
+          weight_customer_activity: number
+          weight_customer_mindshare: number
+        }
+        Insert: {
+          activated_at?: string | null
+          config_name: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          magnitude_fallback_spread: number
+          metric_weights?: Json
+          minimum_operators_for_universe: number
+          missing_dimension_coverage_threshold: number
+          momentum_downward_threshold: number
+          momentum_lookback_periods: number
+          momentum_pressure_strong_upward: number
+          momentum_pressure_upward: number
+          momentum_stability_stddev_threshold: number
+          momentum_strong_downward_threshold: number
+          momentum_strong_upward_threshold: number
+          momentum_upward_threshold: number
+          overlap_weight_channel: number
+          overlap_weight_keyword: number
+          overlap_weight_product: number
+          percentile_magnitude_alpha: number
+          position_confidence_weights: Json
+          relative_strength_center: number
+          relative_strength_clamp_max: number
+          relative_strength_clamp_min: number
+          relative_strength_scale: number
+          retired_at?: string | null
+          standing_confidence_contradiction_penalty: number
+          standing_confidence_weights: Json
+          status?: string
+          threat_weight_momentum: number
+          threat_weight_overlap: number
+          threat_weight_relative_strength: number
+          threshold_challenger_market_standing: number
+          threshold_challenger_momentum_pressure: number
+          threshold_challenger_overlap: number
+          threshold_dominant_market_standing: number
+          threshold_dominant_overlap: number
+          threshold_midmarket_market_standing: number
+          threshold_midmarket_overlap: number
+          updated_at?: string
+          version: number
+          weight_acquisition_power: number
+          weight_commercial_presence: number
+          weight_customer_activity: number
+          weight_customer_mindshare: number
+        }
+        Update: {
+          activated_at?: string | null
+          config_name?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          magnitude_fallback_spread?: number
+          metric_weights?: Json
+          minimum_operators_for_universe?: number
+          missing_dimension_coverage_threshold?: number
+          momentum_downward_threshold?: number
+          momentum_lookback_periods?: number
+          momentum_pressure_strong_upward?: number
+          momentum_pressure_upward?: number
+          momentum_stability_stddev_threshold?: number
+          momentum_strong_downward_threshold?: number
+          momentum_strong_upward_threshold?: number
+          momentum_upward_threshold?: number
+          overlap_weight_channel?: number
+          overlap_weight_keyword?: number
+          overlap_weight_product?: number
+          percentile_magnitude_alpha?: number
+          position_confidence_weights?: Json
+          relative_strength_center?: number
+          relative_strength_clamp_max?: number
+          relative_strength_clamp_min?: number
+          relative_strength_scale?: number
+          retired_at?: string | null
+          standing_confidence_contradiction_penalty?: number
+          standing_confidence_weights?: Json
+          status?: string
+          threat_weight_momentum?: number
+          threat_weight_overlap?: number
+          threat_weight_relative_strength?: number
+          threshold_challenger_market_standing?: number
+          threshold_challenger_momentum_pressure?: number
+          threshold_challenger_overlap?: number
+          threshold_dominant_market_standing?: number
+          threshold_dominant_overlap?: number
+          threshold_midmarket_market_standing?: number
+          threshold_midmarket_overlap?: number
+          updated_at?: string
+          version?: number
+          weight_acquisition_power?: number
+          weight_commercial_presence?: number
+          weight_customer_activity?: number
+          weight_customer_mindshare?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_power_scoring_config_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_power_scoring_config_history: {
+        Row: {
+          change_reason: string | null
+          change_type: string
+          changed_by: string | null
+          config_id: string
+          created_at: string
+          id: string
+          new_values: Json | null
+          previous_values: Json | null
+        }
+        Insert: {
+          change_reason?: string | null
+          change_type: string
+          changed_by?: string | null
+          config_id: string
+          created_at?: string
+          id?: string
+          new_values?: Json | null
+          previous_values?: Json | null
+        }
+        Update: {
+          change_reason?: string | null
+          change_type?: string
+          changed_by?: string | null
+          config_id?: string
+          created_at?: string
+          id?: string
+          new_values?: Json | null
+          previous_values?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_power_scoring_config_history_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "market_power_scoring_config_history_config_id_fkey"
+            columns: ["config_id"]
+            isOneToOne: false
+            referencedRelation: "market_power_scoring_config"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       model_router_config: {
         Row: {
           circuit_breaker_threshold_pct: number | null
@@ -2085,6 +2842,136 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      operator_market_current_position: {
+        Row: {
+          competitor_id: string
+          latest_snapshot_id: string
+          market_code: string
+          market_standing: number
+          momentum_pressure_score: number | null
+          momentum_trend: string
+          operator_market_standing_confidence: number
+          updated_at: string
+        }
+        Insert: {
+          competitor_id: string
+          latest_snapshot_id: string
+          market_code: string
+          market_standing: number
+          momentum_pressure_score?: number | null
+          momentum_trend: string
+          operator_market_standing_confidence: number
+          updated_at?: string
+        }
+        Update: {
+          competitor_id?: string
+          latest_snapshot_id?: string
+          market_code?: string
+          market_standing?: number
+          momentum_pressure_score?: number | null
+          momentum_trend?: string
+          operator_market_standing_confidence?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_market_current_position_competitor_id_fkey"
+            columns: ["competitor_id"]
+            isOneToOne: false
+            referencedRelation: "competitors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operator_market_current_position_latest_snapshot_id_fkey"
+            columns: ["latest_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "market_power_operator_snapshot"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operator_market_presence: {
+        Row: {
+          competitor_id: string
+          created_at: string
+          first_verified_at: string | null
+          id: string
+          last_verified_at: string | null
+          market_code: string
+          presence_status: string
+          updated_at: string
+          verification_status: string
+        }
+        Insert: {
+          competitor_id: string
+          created_at?: string
+          first_verified_at?: string | null
+          id?: string
+          last_verified_at?: string | null
+          market_code: string
+          presence_status?: string
+          updated_at?: string
+          verification_status?: string
+        }
+        Update: {
+          competitor_id?: string
+          created_at?: string
+          first_verified_at?: string | null
+          id?: string
+          last_verified_at?: string | null
+          market_code?: string
+          presence_status?: string
+          updated_at?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_market_presence_competitor_id_fkey"
+            columns: ["competitor_id"]
+            isOneToOne: false
+            referencedRelation: "competitors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operator_market_presence_evidence: {
+        Row: {
+          created_at: string
+          evidence_reference: string | null
+          id: string
+          observed_at: string
+          presence_id: string
+          source_id: string
+          verification_strength: string
+        }
+        Insert: {
+          created_at?: string
+          evidence_reference?: string | null
+          id?: string
+          observed_at?: string
+          presence_id: string
+          source_id: string
+          verification_strength?: string
+        }
+        Update: {
+          created_at?: string
+          evidence_reference?: string | null
+          id?: string
+          observed_at?: string
+          presence_id?: string
+          source_id?: string
+          verification_strength?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_market_presence_evidence_presence_id_fkey"
+            columns: ["presence_id"]
+            isOneToOne: false
+            referencedRelation: "operator_market_presence"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       organisation_members: {
         Row: {
@@ -2311,6 +3198,7 @@ export type Database = {
           raw_data: Json | null
           scan_week: string
           sports_betting_status: string | null
+          synthesis_summary: Json | null
         }
         Insert: {
           aviator_bonus_structure?: Json | null
@@ -2327,6 +3215,7 @@ export type Database = {
           raw_data?: Json | null
           scan_week: string
           sports_betting_status?: string | null
+          synthesis_summary?: Json | null
         }
         Update: {
           aviator_bonus_structure?: Json | null
@@ -2343,6 +3232,7 @@ export type Database = {
           raw_data?: Json | null
           scan_week?: string
           sports_betting_status?: string | null
+          synthesis_summary?: Json | null
         }
         Relationships: [
           {
@@ -2410,6 +3300,7 @@ export type Database = {
           scan_week: string
           scraped_at: string | null
           source_url: string | null
+          synthesis_summary: Json | null
           wagering_requirement: number | null
           wow_bonus_change_pct: number | null
           wow_wagering_change_pct: number | null
@@ -2429,6 +3320,7 @@ export type Database = {
           scan_week: string
           scraped_at?: string | null
           source_url?: string | null
+          synthesis_summary?: Json | null
           wagering_requirement?: number | null
           wow_bonus_change_pct?: number | null
           wow_wagering_change_pct?: number | null
@@ -2448,6 +3340,7 @@ export type Database = {
           scan_week?: string
           scraped_at?: string | null
           source_url?: string | null
+          synthesis_summary?: Json | null
           wagering_requirement?: number | null
           wow_bonus_change_pct?: number | null
           wow_wagering_change_pct?: number | null
@@ -2752,6 +3645,7 @@ export type Database = {
           raw_data: Json | null
           responsible_gambling_status: string | null
           scan_week: string
+          synthesis_summary: Json | null
           violations: Json | null
           withdrawal_terms_status: string | null
         }
@@ -2769,6 +3663,7 @@ export type Database = {
           raw_data?: Json | null
           responsible_gambling_status?: string | null
           scan_week: string
+          synthesis_summary?: Json | null
           violations?: Json | null
           withdrawal_terms_status?: string | null
         }
@@ -2786,6 +3681,7 @@ export type Database = {
           raw_data?: Json | null
           responsible_gambling_status?: string | null
           scan_week?: string
+          synthesis_summary?: Json | null
           violations?: Json | null
           withdrawal_terms_status?: string | null
         }
@@ -3060,6 +3956,7 @@ export type Database = {
           scan_week: string
           started_at: string | null
           status: string
+          synthesis_attempts: number
           synthesis_enqueued: boolean
           total_cost_usd: number | null
           triggered_by: string | null
@@ -3080,6 +3977,7 @@ export type Database = {
           scan_week: string
           started_at?: string | null
           status?: string
+          synthesis_attempts?: number
           synthesis_enqueued?: boolean
           total_cost_usd?: number | null
           triggered_by?: string | null
@@ -3100,6 +3998,7 @@ export type Database = {
           scan_week?: string
           started_at?: string | null
           status?: string
+          synthesis_attempts?: number
           synthesis_enqueued?: boolean
           total_cost_usd?: number | null
           triggered_by?: string | null
@@ -3131,6 +4030,7 @@ export type Database = {
           raw_data: Json | null
           scan_week: string
           serp_positions: Json | null
+          synthesis_summary: Json | null
         }
         Insert: {
           brand_id: string
@@ -3147,6 +4047,7 @@ export type Database = {
           raw_data?: Json | null
           scan_week: string
           serp_positions?: Json | null
+          synthesis_summary?: Json | null
         }
         Update: {
           brand_id?: string
@@ -3163,6 +4064,7 @@ export type Database = {
           raw_data?: Json | null
           scan_week?: string
           serp_positions?: Json | null
+          synthesis_summary?: Json | null
         }
         Relationships: [
           {
@@ -3353,6 +4255,7 @@ export type Database = {
           raw_response: Json | null
           scan_week: string
           scanned_at: string | null
+          synthesis_summary: Json | null
           technologies: Json
         }
         Insert: {
@@ -3368,6 +4271,7 @@ export type Database = {
           raw_response?: Json | null
           scan_week: string
           scanned_at?: string | null
+          synthesis_summary?: Json | null
           technologies?: Json
         }
         Update: {
@@ -3383,6 +4287,7 @@ export type Database = {
           raw_response?: Json | null
           scan_week?: string
           scanned_at?: string | null
+          synthesis_summary?: Json | null
           technologies?: Json
         }
         Relationships: [
@@ -3573,6 +4478,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_market_power_config: {
+        Args: { actor_id: string; reason: string; target_config_id: string }
+        Returns: undefined
+      }
       app_get_cron_secret: { Args: never; Returns: string }
       app_increment_scan_cost: {
         Args: { p_delta: number; p_scan_job_id: string }
